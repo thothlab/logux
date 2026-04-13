@@ -1,8 +1,8 @@
 # logux
 
-**Android Logs & Traffic CLI** -- an interactive tool for Android developers: real-time log viewing, filtering, traffic inspection, and network response mocking.
+[![ru](https://img.shields.io/badge/lang-Русский-green)](README.md)
 
-> [Russian version / Русская версия](README.md)
+**Android Logs & Traffic CLI** -- an interactive tool for Android developers: real-time log viewing, filtering, traffic inspection, and network response mocking.
 
 ---
 
