@@ -5,6 +5,8 @@ edition = "2021"
 description = "Android Logs & Traffic CLI — real-time logcat viewer with filtering, presets, traffic inspection, and mock rules"
 license = "MIT"
 authors = ["ThothLab"]
+readme = "README.md"
+repository = "https://github.com/thothlab/logux"
 
 [[bin]]
 name = "logux"
