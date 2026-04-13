@@ -14,7 +14,7 @@
 - **Smart Filtering** -- by package, tag, level, PID, regex, text -- all changeable on the fly without restart
 - **Exclusion Filters** -- `/exclude tag` and `/exclude msg` to hide unwanted lines (LogRabbit-style "None of")
 - **Inline Filter Editing** -- `/filter edit` loads current filters into the input line for editing
-- **App Tracking** -- automatic PID tracking with re-resolve on app restart
+- **App Tracking** -- automatic PID tracking with re-resolve on app restart; last used filters are auto-restored on reconnect
 - **5 Output Presets** -- compact, threadtime, verbose, minimal, json
 - **Auto-connect** -- single device is selected automatically; multiple devices show a numbered list
 - **Smart Tab-completion** -- `/app` shows package history and current foreground app; `/filter` shows presets associated with the current app
@@ -175,6 +175,8 @@ Edit and press Enter. Format: space-separated `key=value` pairs.
 | `!msg=text` | Exclude by text |
 
 **Auto-save**: every `/filter set` is saved automatically. Previously used combinations are shown as suggestions on next `/filter`.
+
+**Per-app filter memory**: filters are automatically saved per app package. When you reconnect to the same app with `/app <package>`, your last used filters (tags, level, grep, excludes) are restored automatically.
 
 ### Format
 
