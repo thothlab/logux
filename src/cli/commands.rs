@@ -297,13 +297,22 @@ fn cmd_filter(ctx: &mut CommandContext, args: &str) {
                 ctx.output.push("\x1b[31mUsage: /filter set app=com.pkg tag=X level=W !tag=Y\x1b[0m".to_string());
                 return;
             }
-            ctx.filters.apply_edit_string(value);
+            // Strip trailing "# comment" from preset suggestions
+            let clean_value = if let Some(pos) = value.find("  #") {
+                value[..pos].trim()
+            } else {
+                value
+            };
+            ctx.filters.apply_edit_string(clean_value);
             // Sync highlight
             if ctx.filters.text.is_empty() {
                 ctx.formatter.highlight_text.clear();
             } else {
                 ctx.formatter.highlight_text = ctx.filters.text.clone();
             }
+            // Auto-save filter preset
+            let edit_str = ctx.filters.to_edit_string();
+            config::save_filter_preset(&edit_str);
             ctx.output.push(format!("\x1b[32mFilters updated: {}\x1b[0m", ctx.filters.description()));
             *ctx.streaming = true;
         }

@@ -1348,11 +1348,18 @@ async fn handle_enter(app: &mut App) {
     }
 
     if input.starts_with('/') {
-        // /filter edit — populate input with current filters for editing
-        if input == "/filter edit" {
+        // /filter or /filter edit — populate input with current filters for editing
+        if input == "/filter edit" || input == "/filter" {
             let edit_str = app.filters.to_edit_string();
             app.input = format!("/filter set {edit_str}");
             app.cursor_pos = app.input.len();
+            // Show saved filter presets as suggestions
+            app.suggestions = crate::config::list_filter_presets()
+                .into_iter()
+                .map(|(name, expr)| format!("/filter set {expr}  # {name}"))
+                .collect();
+            app.show_suggestions = !app.suggestions.is_empty();
+            app.suggestion_idx = None;
             return;
         }
 

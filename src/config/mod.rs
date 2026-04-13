@@ -151,6 +151,57 @@ pub fn load_filter_history(app_package: &str) -> Vec<String> {
     }
 }
 
+// --- Filter presets (auto-saved editable filter strings) ---
+
+fn filter_presets_file() -> PathBuf {
+    let dir = dirs::home_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join(".logux");
+    let _ = fs::create_dir_all(&dir);
+    dir.join("filter_presets.json")
+}
+
+/// Returns list of (name, edit_string) pairs, most recent first.
+pub fn list_filter_presets() -> Vec<(String, String)> {
+    let path = filter_presets_file();
+    if let Ok(content) = fs::read_to_string(&path) {
+        serde_json::from_str(&content).unwrap_or_default()
+    } else {
+        Vec::new()
+    }
+}
+
+/// Auto-save a filter expression. Uses the expression itself as a key,
+/// deduplicates, and keeps the 20 most recent.
+pub fn save_filter_preset(edit_string: &str) {
+    if edit_string.trim().is_empty() {
+        return;
+    }
+    let path = filter_presets_file();
+    let mut presets: Vec<(String, String)> = if let Ok(content) = fs::read_to_string(&path) {
+        serde_json::from_str(&content).unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+
+    // Build a short name from the filter keys
+    let name = edit_string
+        .split_whitespace()
+        .filter_map(|t| t.split_once('=').map(|(k, _)| k))
+        .collect::<Vec<_>>()
+        .join("+");
+    let name = if name.is_empty() { "filter".to_string() } else { name };
+
+    // Remove duplicates by expression
+    presets.retain(|(_, expr)| expr != edit_string);
+    presets.insert(0, (name, edit_string.to_string()));
+    if presets.len() > 20 {
+        presets.truncate(20);
+    }
+
+    let _ = fs::write(&path, serde_json::to_string_pretty(&presets).unwrap_or_default());
+}
+
 pub fn save_filter_to_history(app_package: &str, preset_name: &str) {
     let path = filter_history_file();
     let mut map: std::collections::HashMap<String, Vec<String>> = if let Ok(content) = fs::read_to_string(&path) {
