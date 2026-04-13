@@ -2,19 +2,23 @@
 
 [![ru](https://img.shields.io/badge/lang-Русский-green)](README.md)
 
-**Android Logs & Traffic CLI** -- an interactive tool for Android developers: real-time log viewing, filtering, traffic inspection, and network response mocking.
+**Android Logs & Traffic CLI** -- a TUI tool for Android developers: real-time log viewing with columnar layout, filtering, traffic inspection, and network response mocking.
 
 ---
 
 ## Features
 
+- **Split-screen TUI** -- logs scroll on top, input line always visible at the bottom
+- **Columnar log output** -- timestamp, level, tag, message in fixed-width columns; long messages wrap within the message column
 - **ADB Logs** -- reads `adb logcat` with colored, formatted output
 - **Smart Filtering** -- by package, tag, level, PID, regex, text -- all changeable on the fly without restart
 - **App Tracking** -- automatic PID tracking with re-resolve on app restart
 - **5 Output Presets** -- compact, threadtime, verbose, minimal, json
+- **Auto-connect** -- single device is selected automatically; multiple devices show a numbered list
+- **Smart Tab-completion** -- `/app` shows package history and current foreground app; `/filter` shows presets associated with the current app
 - **Traffic Inspection** -- HTTP/HTTPS proxy via mitmproxy/mitmdump
 - **Mock Rules** -- response overrides via YAML config with hot reload
-- **Interactive CLI** -- REPL with tab completion, command history, and hints
+- **Keyboard shortcuts** -- PageUp/Down scroll, Ctrl+C exit, Ctrl+L clear, Tab completion
 
 ## Requirements
 
@@ -39,7 +43,7 @@ cd logux
 cargo build --release
 ```
 
-Binary: `./target/release/logux` (3.5 MB, no external dependencies)
+Binary: `./target/release/logux`
 
 ### System-wide install
 
@@ -49,18 +53,40 @@ cargo install --path .
 
 After this, `logux` is available from any directory.
 
+### Update
+
+```bash
+cd logux && git pull && cargo build --release && cargo install --path .
+```
+
 ## Quick Start
 
 ```bash
 # Launch
 logux
 
-# Inside the REPL:
+# Inside the TUI:
 /devices              # List connected devices
 /app com.example.app  # Filter by app (auto PID tracking)
 /level W              # Show WARN and above only
 /grep error           # Text search with highlighting
 /format json          # Switch output to JSON
+/stop                 # Stop the log stream
+```
+
+## Interface
+
+```
+┌──────────────────────────────────────────────────────┐
+│ 04-13 12:34:56  D  MyTag          Short message      │ ← logs with columns
+│ 04-13 12:34:57  W  NetworkManager This is a long     │
+│                                    message that wraps │ ← wrap inside column
+│ ...                                                   │
+├──────────────────────────────────────────────────────┤
+│  device_name   com.pkg   STREAMING         120 lines │ ← status bar
+├──────────────────────────────────────────────────────┤
+│ logux > /app mts_                                     │ ← input (always visible)
+└──────────────────────────────────────────────────────┘
 ```
 
 ## Commands
@@ -93,6 +119,7 @@ logux
 | `/regex <pattern>` | Regex search |
 | `/filter reset` | Clear all filters |
 | `/filter show` | Show active filters |
+| `/filter <preset>` | Load a filter preset |
 
 ### Format
 
@@ -105,8 +132,9 @@ logux
 
 | Command | Description |
 |---------|-------------|
-| `/pause` | Pause output |
-| `/resume` | Resume output |
+| `/stop` | Stop the log stream completely |
+| `/pause` | Toggle pause (logs captured but hidden) |
+| `/resume` | Resume after pause |
 | `/save <file>` | Save matching logs to file |
 
 ### Presets
@@ -138,6 +166,20 @@ logux
 | `/mock enable <id>` | Enable a rule |
 | `/mock disable <id>` | Disable a rule |
 | `/mock reload` | Reload rules from file |
+
+### Keyboard Shortcuts
+
+| Key | Action |
+|-----|--------|
+| `PageUp` / `PageDown` | Scroll logs |
+| `Tab` | Auto-complete |
+| `Up` / `Down` | Command history / suggestion navigation |
+| `Ctrl+C` | Exit |
+| `Ctrl+L` | Clear logs |
+| `Ctrl+U` | Clear input line |
+| `Ctrl+W` | Delete word backward |
+| `Ctrl+A` / `Ctrl+E` | Beginning / end of line |
+| `Esc` | Dismiss suggestions |
 
 ## YAML Mock Rules Example
 
@@ -172,23 +214,24 @@ src/
  ├── main.rs              -- entry point (tokio async runtime)
  ├── adb/mod.rs           -- device management, logcat streaming
  ├── cli/
- │   ├── shell.rs          -- interactive REPL
- │   ├── commands.rs       -- command handlers
- │   └── completer.rs      -- tab completion
+ │   ├── tui.rs            -- TUI: ratatui, event loop, columnar rendering
+ │   ├── commands.rs       -- command handlers (buffered output)
+ │   └── completer.rs      -- tab completion with package/preset history
  ├── logs/
  │   ├── parser.rs         -- logcat parser (threadtime/brief)
  │   ├── filters.rs        -- composable filters
- │   └── formatter.rs      -- colored output, presets
+ │   └── formatter.rs      -- field configuration, presets
  ├── traffic/mod.rs        -- proxy adapter
  ├── mock/mod.rs           -- YAML rules engine
- └── config/mod.rs         -- preset system
+ └── config/mod.rs         -- presets + app/filter history
 ```
 
 ## Versions
 
 | Tag | Language | Description |
 |-----|----------|-------------|
-| `v2.0.0` | Rust | Current version -- single 3.5 MB binary |
+| `v2.1.0` | Rust | TUI with columnar layout, ratatui |
+| `v2.0.0` | Rust | First Rust version (rustyline REPL) |
 | `v1.0.0-python` | Python | Previous version (prompt_toolkit + rich + mitmproxy) |
 
 ```bash
