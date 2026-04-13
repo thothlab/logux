@@ -492,8 +492,10 @@ fn render_ui(frame: &mut Frame, app: &App) {
         .constraints([
             Constraint::Min(3),
             Constraint::Length(suggestion_h),
-            Constraint::Length(1),
-            Constraint::Length(1),
+            Constraint::Length(1), // separator
+            Constraint::Length(1), // status bar
+            Constraint::Length(1), // separator
+            Constraint::Length(1), // input
         ])
         .split(size);
 
@@ -501,8 +503,8 @@ fn render_ui(frame: &mut Frame, app: &App) {
     if app.show_suggestions && suggestion_h > 0 {
         render_suggestions(frame, app, chunks[1]);
     }
-    render_status_bar(frame, app, chunks[2]);
-    render_input(frame, app, chunks[3]);
+    render_status_bar(frame, app, chunks[3]);
+    render_input(frame, app, chunks[5]);
 }
 
 fn render_logs(frame: &mut Frame, app: &App, area: Rect) {
