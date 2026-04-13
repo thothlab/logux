@@ -24,7 +24,14 @@
 
 ## Установка
 
-### Из исходников
+### 1. Установить Rust (если ещё не установлен)
+
+```bash
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source "$HOME/.cargo/env"
+```
+
+### 2. Собрать из исходников
 
 ```bash
 git clone https://github.com/thothlab/logux.git
