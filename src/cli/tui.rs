@@ -605,9 +605,7 @@ fn render_entry<'a>(
         };
         prefix.push(Span::styled(
             ts,
-            Style::default()
-                .fg(Color::DarkGray)
-                .add_modifier(Modifier::DIM),
+            Style::default().fg(Color::Gray),
         ));
         prefix.push(Span::raw(" "));
     }
@@ -793,7 +791,8 @@ fn render_input(frame: &mut Frame, app: &App, area: Rect) {
     let paragraph = Paragraph::new(Line::from(vec![prompt, input_span]));
     frame.render_widget(paragraph, area);
 
-    let cx = area.x + prompt_str.len() as u16 + app.cursor_pos as u16;
+    let char_pos = app.input[..app.cursor_pos].chars().count();
+    let cx = area.x + prompt_str.len() as u16 + char_pos as u16;
     if cx < area.x + area.width {
         frame.set_cursor_position((cx, area.y));
     }
@@ -1056,10 +1055,13 @@ async fn handle_key_event(key: KeyEvent, app: &mut App) {
             KeyCode::Char('w') => {
                 if app.cursor_pos > 0 {
                     let before = &app.input[..app.cursor_pos];
-                    let new_end = before
-                        .trim_end()
+                    let trimmed = before.trim_end();
+                    let new_end = trimmed
                         .rfind(|c: char| c.is_whitespace() || c == '/')
-                        .map(|i| i + 1)
+                        .map(|i| {
+                            let ch = trimmed[i..].chars().next().unwrap();
+                            i + ch.len_utf8()
+                        })
                         .unwrap_or(0);
                     app.input.drain(new_end..app.cursor_pos);
                     app.cursor_pos = new_end;
@@ -1076,26 +1078,41 @@ async fn handle_key_event(key: KeyEvent, app: &mut App) {
 
         KeyCode::Backspace => {
             if app.cursor_pos > 0 {
-                app.input.remove(app.cursor_pos - 1);
-                app.cursor_pos -= 1;
+                let prev = app.input[..app.cursor_pos]
+                    .chars()
+                    .next_back()
+                    .unwrap();
+                app.cursor_pos -= prev.len_utf8();
+                app.input.remove(app.cursor_pos);
                 app.update_suggestions();
             }
         }
         KeyCode::Delete => {
             if app.cursor_pos < app.input.len() {
-                app.input.remove(app.cursor_pos);
+                let cur = app.input[app.cursor_pos..].chars().next().unwrap();
+                for _ in 0..cur.len_utf8() {
+                    app.input.remove(app.cursor_pos);
+                }
                 app.update_suggestions();
             }
         }
 
         KeyCode::Left => {
             if app.cursor_pos > 0 {
-                app.cursor_pos -= 1;
+                let prev = app.input[..app.cursor_pos]
+                    .chars()
+                    .next_back()
+                    .unwrap();
+                app.cursor_pos -= prev.len_utf8();
             }
         }
         KeyCode::Right => {
             if app.cursor_pos < app.input.len() {
-                app.cursor_pos += 1;
+                let next = app.input[app.cursor_pos..]
+                    .chars()
+                    .next()
+                    .unwrap();
+                app.cursor_pos += next.len_utf8();
             }
         }
         KeyCode::Home => app.cursor_pos = 0,
@@ -1185,7 +1202,7 @@ async fn handle_key_event(key: KeyEvent, app: &mut App) {
 
         KeyCode::Char(c) => {
             app.input.insert(app.cursor_pos, c);
-            app.cursor_pos += 1;
+            app.cursor_pos += c.len_utf8();
             app.update_suggestions();
         }
 
