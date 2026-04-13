@@ -198,6 +198,20 @@ fn cmd_app(ctx: &mut CommandContext, args: &str) {
     } else {
         ctx.output.push(format!("\x1b[33mApp {args} not running — will track when started\x1b[0m"));
     }
+
+    // Auto-restore last used filters for this app
+    if let Some(saved) = config::load_app_filters(args) {
+        // Preserve the package/pid we just set
+        let pkg = ctx.filters.package.clone();
+        let pids = ctx.filters.pids.clone();
+        let tracking = ctx.filters.package_tracking;
+        ctx.filters.apply_edit_string(&saved);
+        ctx.filters.package = pkg;
+        ctx.filters.pids = pids;
+        ctx.filters.package_tracking = tracking;
+        ctx.output.push(format!("\x1b[36mRestored filters: {saved}\x1b[0m"));
+    }
+
     *ctx.streaming = true;
 }
 

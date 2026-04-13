@@ -202,6 +202,45 @@ pub fn save_filter_preset(edit_string: &str) {
     let _ = fs::write(&path, serde_json::to_string_pretty(&presets).unwrap_or_default());
 }
 
+// --- Per-app last filter state ---
+
+fn app_filters_file() -> PathBuf {
+    let dir = dirs::home_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join(".logux");
+    let _ = fs::create_dir_all(&dir);
+    dir.join("app_filters.json")
+}
+
+/// Save the current filter edit string for a specific app package.
+pub fn save_app_filters(package: &str, edit_string: &str) {
+    if package.is_empty() {
+        return;
+    }
+    let path = app_filters_file();
+    let mut map: std::collections::HashMap<String, String> =
+        if let Ok(content) = fs::read_to_string(&path) {
+            serde_json::from_str(&content).unwrap_or_default()
+        } else {
+            std::collections::HashMap::new()
+        };
+    if edit_string.trim().is_empty() {
+        map.remove(package);
+    } else {
+        map.insert(package.to_string(), edit_string.to_string());
+    }
+    let _ = fs::write(&path, serde_json::to_string_pretty(&map).unwrap_or_default());
+}
+
+/// Load the last saved filter edit string for an app package.
+pub fn load_app_filters(package: &str) -> Option<String> {
+    let path = app_filters_file();
+    let content = fs::read_to_string(&path).ok()?;
+    let map: std::collections::HashMap<String, String> =
+        serde_json::from_str(&content).ok()?;
+    map.get(package).cloned().filter(|s| !s.trim().is_empty())
+}
+
 pub fn save_filter_to_history(app_package: &str, preset_name: &str) {
     let path = filter_history_file();
     let mut map: std::collections::HashMap<String, Vec<String>> = if let Ok(content) = fs::read_to_string(&path) {

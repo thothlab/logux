@@ -1426,6 +1426,12 @@ async fn handle_enter(app: &mut App) {
         // Re-filter the entire buffer with updated filters
         app.rebuild_filtered();
 
+        // Save current filters for the active app
+        if !app.filters.package.is_empty() {
+            let edit = app.filters.to_edit_string();
+            crate::config::save_app_filters(&app.filters.package, &edit);
+        }
+
         // Track app history
         if input.starts_with("/app ") {
             let pkg = input.strip_prefix("/app ").unwrap_or("").trim();
@@ -1442,5 +1448,9 @@ async fn handle_enter(app: &mut App) {
         app.formatter.highlight_text = input.clone();
         app.push_system(format!("\x1b[32mQuick filter: '{input}'\x1b[0m"));
         app.rebuild_filtered();
+        if !app.filters.package.is_empty() {
+            let edit = app.filters.to_edit_string();
+            crate::config::save_app_filters(&app.filters.package, &edit);
+        }
     }
 }
