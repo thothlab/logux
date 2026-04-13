@@ -289,6 +289,24 @@ fn cmd_filter(ctx: &mut CommandContext, args: &str) {
         "show" => {
             ctx.output.push(format!("\x1b[36mActive filters: {}\x1b[0m", ctx.filters.description()));
         }
+        "edit" => {
+            // Handled by TUI — should not reach here
+        }
+        "set" => {
+            if value.is_empty() {
+                ctx.output.push("\x1b[31mUsage: /filter set app=com.pkg tag=X level=W !tag=Y\x1b[0m".to_string());
+                return;
+            }
+            ctx.filters.apply_edit_string(value);
+            // Sync highlight
+            if ctx.filters.text.is_empty() {
+                ctx.formatter.highlight_text.clear();
+            } else {
+                ctx.formatter.highlight_text = ctx.filters.text.clone();
+            }
+            ctx.output.push(format!("\x1b[32mFilters updated: {}\x1b[0m", ctx.filters.description()));
+            *ctx.streaming = true;
+        }
         "tag" => {
             cmd_tag(ctx, value);
             return;

@@ -157,6 +157,100 @@ impl FilterState {
             parts.join(" | ")
         }
     }
+
+    /// Produce a space-separated key=value string suitable for editing and re-parsing.
+    pub fn to_edit_string(&self) -> String {
+        let mut parts = Vec::new();
+        if !self.package.is_empty() {
+            parts.push(format!("app={}", self.package));
+        }
+        if !self.tags.is_empty() {
+            let mut tags: Vec<_> = self.tags.iter().cloned().collect();
+            tags.sort();
+            parts.push(format!("tag={}", tags.join(",")));
+        }
+        if self.min_level > LogLevel::Verbose {
+            parts.push(format!("level={}", self.min_level.char()));
+        }
+        if !self.text.is_empty() {
+            parts.push(format!("grep={}", self.text));
+        }
+        if let Some(ref re) = self.regex {
+            parts.push(format!("regex={}", re.as_str()));
+        }
+        if !self.exclude_tags.is_empty() {
+            let mut tags: Vec<_> = self.exclude_tags.iter().cloned().collect();
+            tags.sort();
+            parts.push(format!("!tag={}", tags.join(",")));
+        }
+        if !self.exclude_texts.is_empty() {
+            for t in &self.exclude_texts {
+                parts.push(format!("!msg={t}"));
+            }
+        }
+        parts.join(" ")
+    }
+
+    /// Parse a space-separated key=value edit string and apply filters.
+    /// Replaces all current filters.
+    pub fn apply_edit_string(&mut self, input: &str) {
+        // Reset everything except package tracking state which is managed by /app
+        let old_package = self.package.clone();
+        let old_pids = self.pids.clone();
+        let old_tracking = self.package_tracking;
+        self.reset();
+
+        for token in input.split_whitespace() {
+            if let Some((key, value)) = token.split_once('=') {
+                match key {
+                    "app" => {
+                        self.package = value.to_string();
+                        self.package_tracking = true;
+                    }
+                    "tag" => {
+                        for t in value.split(',') {
+                            if !t.is_empty() {
+                                self.tags.insert(t.to_string());
+                            }
+                        }
+                    }
+                    "level" => {
+                        if let Some(l) = LogLevel::from_name(value) {
+                            self.min_level = l;
+                        } else if let Some(c) = value.chars().next() {
+                            self.min_level = LogLevel::from_char(c);
+                        }
+                    }
+                    "grep" | "text" => {
+                        self.text = value.to_string();
+                    }
+                    "regex" => {
+                        let _ = self.set_regex(value);
+                    }
+                    "!tag" | "exclude_tag" => {
+                        for t in value.split(',') {
+                            if !t.is_empty() {
+                                self.exclude_tags.insert(t.to_string());
+                            }
+                        }
+                    }
+                    "!msg" | "exclude_msg" => {
+                        if !value.is_empty() {
+                            self.exclude_texts.push(value.to_string());
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        // If app wasn't in the edit string, restore the original
+        if self.package.is_empty() && !old_package.is_empty() {
+            self.package = old_package;
+            self.pids = old_pids;
+            self.package_tracking = old_tracking;
+        }
+    }
 }
 
 pub fn matches(entry: &LogEntry, state: &FilterState) -> bool {

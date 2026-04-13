@@ -1255,6 +1255,14 @@ async fn handle_enter(app: &mut App) {
     }
 
     if input.starts_with('/') {
+        // /filter edit — populate input with current filters for editing
+        if input == "/filter edit" {
+            let edit_str = app.filters.to_edit_string();
+            app.input = format!("/filter set {edit_str}");
+            app.cursor_pos = app.input.len();
+            return;
+        }
+
         // Lift auto-pause from previous command output
         if app.paused {
             app.paused = false;

@@ -13,7 +13,7 @@ pub const COMMANDS: &[(&str, &[&str])] = &[
     ("/level", &["verbose", "debug", "info", "warn", "error", "fatal"]),
     ("/grep", &["reset"]),
     ("/regex", &["reset"]),
-    ("/filter", &["reset", "show", "tag", "level", "grep", "regex", "exclude", "app"]),
+    ("/filter", &["reset", "show", "edit", "set", "tag", "level", "grep", "regex", "exclude", "app"]),
     ("/exclude", &["tag", "msg", "show", "reset", "remove"]),
     ("/format", &["compact", "threadtime", "verbose", "minimal", "json"]),
     ("/fields", &["+timestamp", "-timestamp", "+level", "-level", "+tag", "-tag", "+pid", "-pid", "+tid", "-tid"]),
