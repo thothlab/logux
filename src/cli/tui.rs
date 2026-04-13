@@ -173,6 +173,10 @@ impl App {
     fn trim_and_scroll(&mut self) {
         while self.log_lines.len() > MAX_LOG_LINES {
             self.log_lines.pop_front();
+            // When scrolled up, compensate so the view doesn't jump
+            if !self.auto_scroll && self.scroll_offset > 0 {
+                self.scroll_offset = self.scroll_offset.saturating_sub(1);
+            }
         }
         if self.auto_scroll {
             self.scroll_offset = 0;
@@ -742,7 +746,17 @@ fn render_status_bar(frame: &mut Frame, app: &App, area: Rect) {
         parts.push(Span::raw(" "));
     }
 
-    if app.paused {
+    if app.paused && !app.auto_scroll {
+        parts.push(Span::styled(
+            format!(" SCROLL +{} ", app.scroll_offset),
+            Style::default().fg(Color::White).bg(Color::Yellow),
+        ));
+        parts.push(Span::raw(" "));
+        parts.push(Span::styled(
+            " PageDown to resume ",
+            Style::default().fg(Color::Gray).add_modifier(Modifier::DIM),
+        ));
+    } else if app.paused {
         parts.push(Span::styled(
             " PAUSED ",
             Style::default().fg(Color::White).bg(Color::Red),
@@ -1190,15 +1204,27 @@ async fn handle_key_event(key: KeyEvent, app: &mut App) {
 
         KeyCode::PageUp => {
             let max = app.log_lines.len().saturating_sub(1);
-            app.scroll_offset = (app.scroll_offset + 10).min(max);
+            let step = 30;
+            app.scroll_offset = (app.scroll_offset + step).min(max);
             app.auto_scroll = false;
+            // Auto-pause stream so new logs don't push the view
+            if !app.paused && app.streaming {
+                app.paused = true;
+                app.stream_paused.store(true, Ordering::Relaxed);
+            }
         }
         KeyCode::PageDown => {
-            if app.scroll_offset > 10 {
-                app.scroll_offset -= 10;
+            let step = 30;
+            if app.scroll_offset > step {
+                app.scroll_offset -= step;
             } else {
                 app.scroll_offset = 0;
                 app.auto_scroll = true;
+                // Resume stream when scrolled back to bottom
+                if app.paused && app.streaming {
+                    app.paused = false;
+                    app.stream_paused.store(false, Ordering::Relaxed);
+                }
             }
         }
 
