@@ -828,18 +828,51 @@ fn render_status_bar(frame: &mut Frame, app: &App, area: Rect) {
 
 fn render_input(frame: &mut Frame, app: &App, area: Rect) {
     let prompt_str = "logux > ";
+    let prompt_w = prompt_str.chars().count();
+    let total_w = area.width as usize;
+    if total_w <= prompt_w {
+        return;
+    }
+    let input_w = total_w - prompt_w;
+
+    let chars: Vec<char> = app.input.chars().collect();
+    let cursor_char = app.input[..app.cursor_pos].chars().count();
+
+    // Horizontal scroll: keep the cursor visible with a small right margin.
+    // If input fits, no scroll. Otherwise ensure cursor is within [scroll, scroll+input_w-1].
+    let scroll = if chars.len() < input_w {
+        0
+    } else if cursor_char >= input_w {
+        cursor_char + 1 - input_w
+    } else {
+        0
+    };
+
+    let visible_end = (scroll + input_w).min(chars.len());
+    let visible: String = chars[scroll..visible_end].iter().collect();
+
+    // Leading ellipsis indicator when scrolled
+    let leading = if scroll > 0 { "…" } else { "" };
+    let visible_display = if !leading.is_empty() && !visible.is_empty() {
+        // Replace first visible char with ellipsis to keep width constant
+        let mut it = visible.chars();
+        it.next();
+        format!("{leading}{}", it.collect::<String>())
+    } else {
+        visible
+    };
+
     let prompt = Span::styled(
         prompt_str,
         Style::default()
             .fg(Color::Cyan)
             .add_modifier(Modifier::BOLD),
     );
-    let input_span = Span::raw(&app.input);
+    let input_span = Span::raw(visible_display);
     let paragraph = Paragraph::new(Line::from(vec![prompt, input_span]));
     frame.render_widget(paragraph, area);
 
-    let char_pos = app.input[..app.cursor_pos].chars().count();
-    let cx = area.x + prompt_str.len() as u16 + char_pos as u16;
+    let cx = area.x + prompt_w as u16 + (cursor_char - scroll) as u16;
     if cx < area.x + area.width {
         frame.set_cursor_position((cx, area.y));
     }
