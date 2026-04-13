@@ -1,0 +1,42 @@
+rules:
+  - id: user_profile_mock
+    enabled: true
+    priority: 10
+
+    match:
+      method: GET
+      path: /api/v1/profile
+      query:
+        userId: "123"
+
+    response:
+      type: file
+      file: ../mocks/profile_123.json
+      status: 200
+
+  - id: force_error
+    enabled: false
+    priority: 5
+
+    match:
+      path: /api/v1/payment
+
+    response:
+      type: error
+      status: 500
+
+  - id: slow_response
+    enabled: true
+    priority: 1
+
+    match:
+      method: POST
+      path: /api/v1/checkout
+
+    response:
+      type: json
+      status: 200
+      body: '{"status": "ok", "orderId": "mock-001"}'
+      delay_ms: 2000
+      headers:
+        X-Mock: "true"
