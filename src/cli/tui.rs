@@ -1282,9 +1282,17 @@ async fn handle_enter(app: &mut App) {
             dispatch(&mut ctx, &input).await;
         }
 
-        // If the command produced output and stream is active, auto-pause
-        // so the user can read the output before logs flood it away.
-        if !output.is_empty() && app.streaming && !app.paused {
+        // Auto-pause for informational commands so output isn't buried.
+        // Skip for stream-control and single-line action confirmations.
+        let cmd = input.split_whitespace().next().unwrap_or("");
+        let is_control = matches!(
+            cmd,
+            "/stop" | "/pause" | "/resume" | "/app" | "/pid" | "/tag"
+                | "/level" | "/grep" | "/regex" | "/connect" | "/disconnect"
+                | "/clear" | "/exit" | "/quit" | "/q" | "/save"
+                | "/format" | "/fields"
+        );
+        if !is_control && !output.is_empty() && app.streaming && !app.paused {
             app.paused = true;
         }
 
