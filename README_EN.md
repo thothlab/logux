@@ -109,7 +109,7 @@ logux
 | `/connect <ip:port>` | Connect via TCP |
 | `/disconnect` | Disconnect |
 
-### Logs
+### Logs & Filtering
 
 | Command | Description |
 |---------|-------------|
@@ -124,11 +124,55 @@ logux
 | `/exclude show` | Show exclusion filters |
 | `/exclude reset` | Clear all exclusions |
 | `/exclude remove <value>` | Remove one exclusion |
-| `/filter reset` | Clear all filters |
+| `/filter` | Edit filters inline (= `/filter edit`) |
 | `/filter show` | Show active filters |
-| `/filter edit` | Edit filters inline in the input line |
 | `/filter set <expr>` | Set filters in one line |
-| `/filter <preset>` | Load a filter preset |
+| `/filter reset` | Clear all filters |
+| `/filter <preset>` | Load a saved preset |
+
+#### How Filters Work
+
+**All filters use `contains` (partial match), not exact match.**
+For example, `tag=anal` matches tags "Analytics", "AnalyticsTracker", "DataAnalysis".
+For exact match, use regex with anchors: `/regex ^Analytics$`.
+
+**Inclusion filters** combine with **AND** (all conditions must match):
+```
+/app ru.lewis.dbo    — by app
+/tag network         — + tag contains "network"
+/level W             — + level >= WARN
+/grep timeout        — + text contains "timeout"
+```
+Result: show only lines where app=ru.lewis.dbo **AND** tag contains "network" **AND** level >= W **AND** text contains "timeout".
+
+**OR within same filter type**: multiple tags (`/tag A`, then `/tag B`) work as OR -- a line passes if tag contains A **OR** B.
+
+**Exclusion filters** (LogRabbit-style "None of the following"):
+```
+/exclude tag System.out       — hide tag containing "System.out"
+/exclude tag CatalogParser    — hide another
+/exclude msg "[socket]:check" — hide lines with text
+```
+
+#### Inline Filter Editing
+
+`/filter` or `/filter edit` loads current filters into the input line:
+```
+logux > /filter set app=ru.lewis.dbo tag=network level=W !tag=System.out,Instana
+```
+Edit and press Enter. Format: space-separated `key=value` pairs.
+
+| Key | Description |
+|-----|-------------|
+| `app=X` | Filter by app |
+| `tag=A,B` | Tags (OR via comma) |
+| `level=W` | Minimum level |
+| `grep=text` | Text search |
+| `regex=pattern` | Regex |
+| `!tag=X,Y` | Exclude tags |
+| `!msg=text` | Exclude by text |
+
+**Auto-save**: every `/filter set` is saved automatically. Previously used combinations are shown as suggestions on next `/filter`.
 
 ### Format
 
@@ -176,11 +220,13 @@ logux
 | `/mock disable <id>` | Disable a rule |
 | `/mock reload` | Reload rules from file |
 
-### Keyboard Shortcuts
+### Keyboard Shortcuts & Scrolling
 
 | Key | Action |
 |-----|--------|
-| `PageUp` / `PageDown` | Scroll logs |
+| `Mouse wheel` | Scroll logs (3 lines) |
+| `Shift+Up` / `Shift+Down` | Scroll logs (5 lines) |
+| `PageUp` / `PageDown` | Scroll logs (30 lines) |
 | `Tab` | Auto-complete |
 | `Up` / `Down` | Command history / suggestion navigation |
 | `Ctrl+C` | Exit |
@@ -189,6 +235,8 @@ logux
 | `Ctrl+W` | Delete word backward |
 | `Ctrl+A` / `Ctrl+E` | Beginning / end of line |
 | `Esc` | Dismiss suggestions |
+
+Scrolling up auto-pauses the stream. Scrolling back down to the bottom resumes it. Status bar shows `SCROLL +N` with a `PageDown to resume` hint.
 
 ## YAML Mock Rules Example
 
