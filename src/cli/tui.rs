@@ -381,33 +381,34 @@ fn start_log_stream(app: &mut App, tx: mpsc::UnboundedSender<LogEntryData>) {
     app.stream_stop = Some(stop.clone());
 
     let paused = app.stream_paused.clone();
-    let filter_snapshot = (
-        app.filters.pids.clone(),
-        app.filters.tags.clone(),
-        app.filters.min_level,
-        app.filters.text.clone(),
-        app.filters.regex.as_ref().map(|r| r.as_str().to_string()),
-        app.filters.threads.clone(),
-    );
+
+    // Snapshot all filter state for the stream task
+    let mut fs = FilterState::default();
+    fs.pids = app.filters.pids.clone();
+    fs.tags = app.filters.tags.clone();
+    fs.min_level = app.filters.min_level;
+    fs.text = app.filters.text.clone();
+    if let Some(ref re) = app.filters.regex {
+        let _ = fs.set_regex(re.as_str());
+    }
+    fs.threads = app.filters.threads.clone();
+    fs.exclude_tags = app.filters.exclude_tags.clone();
+    fs.exclude_texts = app.filters.exclude_texts.clone();
+    fs.package = app.filters.package.clone();
+    fs.package_tracking = app.filters.package_tracking;
+
     let save = app.save_path.clone();
 
     if let Ok(child) = app.adb.start_logcat(false) {
         tokio::spawn(async move {
-            stream_logs(child, filter_snapshot, paused, stop, save, tx).await;
+            stream_logs(child, fs, paused, stop, save, tx).await;
         });
     }
 }
 
 async fn stream_logs(
     mut child: tokio::process::Child,
-    filter_state: (
-        std::collections::HashSet<u32>,
-        std::collections::HashSet<String>,
-        LogLevel,
-        String,
-        Option<String>,
-        std::collections::HashSet<u32>,
-    ),
+    fs: FilterState,
     paused: Arc<AtomicBool>,
     stop: Arc<AtomicBool>,
     save_path: Option<String>,
@@ -419,16 +420,6 @@ async fn stream_logs(
     };
 
     let mut reader = BufReader::new(stdout).lines();
-
-    let mut fs = FilterState::default();
-    fs.pids = filter_state.0;
-    fs.tags = filter_state.1;
-    fs.min_level = filter_state.2;
-    fs.text = filter_state.3;
-    if let Some(pattern) = filter_state.4 {
-        let _ = fs.set_regex(&pattern);
-    }
-    fs.threads = filter_state.5;
 
     let mut save_file = save_path.and_then(|p| {
         std::fs::OpenOptions::new()
