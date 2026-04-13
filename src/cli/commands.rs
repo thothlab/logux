@@ -41,6 +41,7 @@ pub async fn dispatch(ctx: &mut CommandContext<'_>, input: &str) {
         "/grep" => cmd_grep(ctx, args),
         "/regex" => cmd_regex(ctx, args),
         "/filter" => cmd_filter(ctx, args),
+        "/exclude" => cmd_exclude(ctx, args),
         "/format" => cmd_format(ctx, args),
         "/fields" => cmd_fields(ctx, args),
         "/stop" => cmd_stop(ctx),
@@ -71,11 +72,13 @@ fn cmd_help(ctx: &mut CommandContext) {
         ("--- Logs ---", ""),
         ("/app <package>", "Filter by app (smart PID tracking)"),
         ("/pid <pid>", "Filter by PID"),
-        ("/tag <tag>", "Filter by tag"),
-        ("/level <V|D|I|W|E|F>", "Minimum log level"),
-        ("/grep <text>", "Filter by text"),
-        ("/regex <pattern>", "Filter by regex"),
+        ("/tag <tag>", "Add tag filter (-tag remove, reset clear)"),
+        ("/level <V|D|I|W|E|F>", "Min log level (reset to clear)"),
+        ("/grep <text>", "Filter by text (reset to clear)"),
+        ("/regex <pattern>", "Filter by regex (reset to clear)"),
         ("/filter reset|show|<preset>", "Clear, show, or load preset"),
+        ("/exclude tag|msg <value>", "Exclude by tag/message"),
+        ("/exclude show|reset|remove", "Manage exclusions"),
         ("", ""),
         ("--- Format ---", ""),
         ("/format <preset>", "compact|threadtime|verbose|minimal|json"),
@@ -211,17 +214,32 @@ fn cmd_pid(ctx: &mut CommandContext, args: &str) {
 
 fn cmd_tag(ctx: &mut CommandContext, args: &str) {
     if args.is_empty() {
-        ctx.output.push("\x1b[31mUsage: /tag <tag_name>\x1b[0m".to_string());
+        if ctx.filters.tags.is_empty() {
+            ctx.output.push("\x1b[2mNo tag filters\x1b[0m".to_string());
+        } else {
+            let tags: Vec<_> = ctx.filters.tags.iter().cloned().collect();
+            ctx.output.push(format!("\x1b[36mTag filters: {}\x1b[0m", tags.join(", ")));
+        }
+        ctx.output.push("\x1b[2mUsage: /tag <name> to add, /tag -<name> to remove, /tag reset to clear\x1b[0m".to_string());
         return;
     }
-    ctx.filters.add_tag(args);
-    ctx.output.push(format!("\x1b[32mFilter: added tag '{args}'\x1b[0m"));
+    if args == "reset" {
+        ctx.filters.clear_tags();
+        ctx.output.push("\x1b[32mTag filters cleared\x1b[0m".to_string());
+    } else if let Some(tag) = args.strip_prefix('-') {
+        ctx.filters.remove_tag(tag);
+        ctx.output.push(format!("\x1b[33mRemoved tag filter: '{tag}'\x1b[0m"));
+    } else {
+        ctx.filters.add_tag(args);
+        ctx.output.push(format!("\x1b[32mFilter: added tag '{args}'\x1b[0m"));
+    }
     *ctx.streaming = true;
 }
 
 fn cmd_level(ctx: &mut CommandContext, args: &str) {
-    if args.is_empty() {
-        ctx.output.push("\x1b[31mUsage: /level <V|D|I|W|E|F>\x1b[0m".to_string());
+    if args.is_empty() || args == "reset" {
+        ctx.filters.clear_level();
+        ctx.output.push("\x1b[32mLevel filter cleared (showing all levels)\x1b[0m".to_string());
         return;
     }
     match LogLevel::from_name(args) {
@@ -229,13 +247,15 @@ fn cmd_level(ctx: &mut CommandContext, args: &str) {
             ctx.filters.set_level(level);
             ctx.output.push(format!("\x1b[32mFilter: level >= {}\x1b[0m", level.char()));
         }
-        None => ctx.output.push(format!("\x1b[31mUnknown level: {args}. Use V, D, I, W, E, or F\x1b[0m")),
+        None => ctx.output.push(format!("\x1b[31mUnknown level: {args}. Use V, D, I, W, E, or F (or 'reset')\x1b[0m")),
     }
 }
 
 fn cmd_grep(ctx: &mut CommandContext, args: &str) {
-    if args.is_empty() {
-        ctx.output.push("\x1b[31mUsage: /grep <text>\x1b[0m".to_string());
+    if args.is_empty() || args == "reset" {
+        ctx.filters.clear_text();
+        ctx.formatter.highlight_text.clear();
+        ctx.output.push("\x1b[32mText filter cleared\x1b[0m".to_string());
         return;
     }
     ctx.filters.set_text(args);
@@ -244,8 +264,9 @@ fn cmd_grep(ctx: &mut CommandContext, args: &str) {
 }
 
 fn cmd_regex(ctx: &mut CommandContext, args: &str) {
-    if args.is_empty() {
-        ctx.output.push("\x1b[31mUsage: /regex <pattern>\x1b[0m".to_string());
+    if args.is_empty() || args == "reset" {
+        ctx.filters.clear_regex();
+        ctx.output.push("\x1b[32mRegex filter cleared\x1b[0m".to_string());
         return;
     }
     match ctx.filters.set_regex(args) {
@@ -278,6 +299,74 @@ fn cmd_filter(ctx: &mut CommandContext, args: &str) {
                 }
                 Err(e) => ctx.output.push(format!("\x1b[31m{e}\x1b[0m")),
             }
+        }
+    }
+}
+
+fn cmd_exclude(ctx: &mut CommandContext, args: &str) {
+    let parts: Vec<&str> = args.splitn(2, char::is_whitespace).collect();
+    let sub = parts.first().map(|s| s.to_lowercase()).unwrap_or_default();
+    let value = parts.get(1).map(|s| s.trim()).unwrap_or("");
+
+    match sub.as_str() {
+        "tag" => {
+            if value.is_empty() {
+                ctx.output.push("\x1b[31mUsage: /exclude tag <name>\x1b[0m".to_string());
+                return;
+            }
+            ctx.filters.exclude_tags.insert(value.to_string());
+            ctx.output.push(format!("\x1b[33mExcluding tag: '{value}'\x1b[0m"));
+        }
+        "msg" | "message" | "text" => {
+            if value.is_empty() {
+                ctx.output.push("\x1b[31mUsage: /exclude msg <text>\x1b[0m".to_string());
+                return;
+            }
+            ctx.filters.exclude_texts.push(value.to_string());
+            ctx.output.push(format!("\x1b[33mExcluding messages containing: '{value}'\x1b[0m"));
+        }
+        "show" => {
+            if ctx.filters.exclude_tags.is_empty() && ctx.filters.exclude_texts.is_empty() {
+                ctx.output.push("\x1b[2mNo exclusion filters\x1b[0m".to_string());
+            } else {
+                ctx.output.push("\x1b[36mExclusion filters (none of these pass):\x1b[0m".to_string());
+                for tag in &ctx.filters.exclude_tags {
+                    ctx.output.push(format!("  \x1b[33mtag contains '{tag}'\x1b[0m"));
+                }
+                for text in &ctx.filters.exclude_texts {
+                    ctx.output.push(format!("  \x1b[33mmsg contains '{text}'\x1b[0m"));
+                }
+            }
+            return;
+        }
+        "reset" => {
+            ctx.filters.exclude_tags.clear();
+            ctx.filters.exclude_texts.clear();
+            ctx.output.push("\x1b[32mAll exclusion filters cleared\x1b[0m".to_string());
+        }
+        "remove" => {
+            if value.is_empty() {
+                ctx.output.push("\x1b[31mUsage: /exclude remove <tag_or_text>\x1b[0m".to_string());
+                return;
+            }
+            let removed_tag = ctx.filters.exclude_tags.remove(value);
+            let removed_text = ctx.filters.exclude_texts.iter().position(|t| t == value);
+            if let Some(pos) = removed_text {
+                ctx.filters.exclude_texts.remove(pos);
+                ctx.output.push(format!("\x1b[32mRemoved exclusion: '{value}'\x1b[0m"));
+            } else if removed_tag {
+                ctx.output.push(format!("\x1b[32mRemoved exclusion: '{value}'\x1b[0m"));
+            } else {
+                ctx.output.push(format!("\x1b[31mExclusion not found: '{value}'\x1b[0m"));
+            }
+        }
+        _ => {
+            ctx.output.push("\x1b[31mUsage: /exclude tag|msg|show|reset|remove\x1b[0m".to_string());
+            ctx.output.push("\x1b[2m  /exclude tag System.out     -- hide lines with this tag\x1b[0m".to_string());
+            ctx.output.push("\x1b[2m  /exclude msg \"[socket]:\"    -- hide lines containing text\x1b[0m".to_string());
+            ctx.output.push("\x1b[2m  /exclude show               -- list exclusions\x1b[0m".to_string());
+            ctx.output.push("\x1b[2m  /exclude reset              -- clear all exclusions\x1b[0m".to_string());
+            ctx.output.push("\x1b[2m  /exclude remove <value>     -- remove one exclusion\x1b[0m".to_string());
         }
     }
 }

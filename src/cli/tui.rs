@@ -1292,7 +1292,7 @@ async fn handle_enter(app: &mut App) {
             "/stop" | "/pause" | "/resume" | "/app" | "/pid" | "/tag"
                 | "/level" | "/grep" | "/regex" | "/connect" | "/disconnect"
                 | "/clear" | "/exit" | "/quit" | "/q" | "/save"
-                | "/format" | "/fields"
+                | "/format" | "/fields" | "/exclude"
         );
         if !is_control && !output.is_empty() && app.streaming && !app.paused {
             app.paused = true;

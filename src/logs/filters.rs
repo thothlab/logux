@@ -14,6 +14,9 @@ pub struct FilterState {
     pub regex: Option<Regex>,
     pub threads: HashSet<u32>,
     pub package_tracking: bool,
+    // Exclusion filters ("None of the following")
+    pub exclude_tags: HashSet<String>,
+    pub exclude_texts: Vec<String>,
 }
 
 impl Default for FilterState {
@@ -27,6 +30,8 @@ impl Default for FilterState {
             regex: None,
             threads: HashSet::new(),
             package_tracking: false,
+            exclude_tags: HashSet::new(),
+            exclude_texts: Vec::new(),
         }
     }
 }
@@ -52,6 +57,34 @@ impl FilterState {
 
     pub fn add_tag(&mut self, tag: &str) {
         self.tags.insert(tag.to_string());
+    }
+
+    pub fn remove_tag(&mut self, tag: &str) {
+        self.tags.remove(&tag.to_lowercase());
+        // Also try exact match
+        self.tags.remove(tag);
+    }
+
+    pub fn clear_tags(&mut self) {
+        self.tags.clear();
+    }
+
+    pub fn clear_text(&mut self) {
+        self.text.clear();
+    }
+
+    pub fn clear_regex(&mut self) {
+        self.regex = None;
+    }
+
+    pub fn clear_level(&mut self) {
+        self.min_level = LogLevel::Verbose;
+    }
+
+    pub fn clear_app(&mut self) {
+        self.package.clear();
+        self.pids.clear();
+        self.package_tracking = false;
     }
 
     pub fn set_level(&mut self, level: LogLevel) {
@@ -104,6 +137,20 @@ impl FilterState {
             let tids: Vec<_> = self.threads.iter().map(|t| t.to_string()).collect();
             parts.push(format!("thread={}", tids.join(",")));
         }
+        if !self.exclude_tags.is_empty() {
+            let tags: Vec<_> = self.exclude_tags.iter().cloned().collect();
+            parts.push(format!("exclude_tag={}", tags.join(",")));
+        }
+        if !self.exclude_texts.is_empty() {
+            parts.push(format!(
+                "exclude_msg={}",
+                self.exclude_texts
+                    .iter()
+                    .map(|t| format!("'{t}'"))
+                    .collect::<Vec<_>>()
+                    .join(",")
+            ));
+        }
         if parts.is_empty() {
             "no filters".to_string()
         } else {
@@ -150,6 +197,30 @@ pub fn matches(entry: &LogEntry, state: &FilterState) -> bool {
     // Thread
     if !state.threads.is_empty() && !state.threads.contains(&entry.tid) {
         return false;
+    }
+
+    // Exclude tags
+    if !state.exclude_tags.is_empty() {
+        let tag_lower = entry.tag.to_lowercase();
+        if state
+            .exclude_tags
+            .iter()
+            .any(|t| tag_lower.contains(&t.to_lowercase()))
+        {
+            return false;
+        }
+    }
+
+    // Exclude texts (match against tag+message)
+    if !state.exclude_texts.is_empty() {
+        let haystack = format!("{} {}", entry.tag, entry.message).to_lowercase();
+        if state
+            .exclude_texts
+            .iter()
+            .any(|t| haystack.contains(&t.to_lowercase()))
+        {
+            return false;
+        }
     }
 
     true
