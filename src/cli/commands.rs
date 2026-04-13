@@ -276,7 +276,11 @@ fn cmd_regex(ctx: &mut CommandContext, args: &str) {
 }
 
 fn cmd_filter(ctx: &mut CommandContext, args: &str) {
-    match args {
+    let parts: Vec<&str> = args.splitn(2, char::is_whitespace).collect();
+    let sub = parts[0];
+    let value = parts.get(1).map(|s| s.trim()).unwrap_or("");
+
+    match sub {
         "reset" => {
             ctx.filters.reset();
             ctx.formatter.highlight_text.clear();
@@ -285,7 +289,33 @@ fn cmd_filter(ctx: &mut CommandContext, args: &str) {
         "show" => {
             ctx.output.push(format!("\x1b[36mActive filters: {}\x1b[0m", ctx.filters.description()));
         }
-        "" => ctx.output.push("\x1b[31mUsage: /filter reset | show | <preset_name>\x1b[0m".to_string()),
+        "tag" => {
+            cmd_tag(ctx, value);
+            return;
+        }
+        "level" => {
+            cmd_level(ctx, value);
+            return;
+        }
+        "grep" | "text" => {
+            cmd_grep(ctx, value);
+            return;
+        }
+        "regex" => {
+            cmd_regex(ctx, value);
+            return;
+        }
+        "exclude" => {
+            cmd_exclude(ctx, value);
+            return;
+        }
+        "app" => {
+            cmd_app(ctx, value);
+            return;
+        }
+        "" => {
+            ctx.output.push("\x1b[31mUsage: /filter tag|level|grep|regex|exclude|reset|show|<preset>\x1b[0m".to_string());
+        }
         preset_name => {
             // Try to load a preset
             match config::load_preset(preset_name, ctx.filters, &mut ctx.formatter.config) {
