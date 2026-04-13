@@ -132,6 +132,8 @@ logux
 
 #### How Filters Work
 
+**Retroactive filtering (Android Studio style):** changing any filter immediately re-filters the entire log buffer -- not just new lines. All previously received entries are kept in memory and re-evaluated against the updated filters. This works exactly like the logcat panel in Android Studio.
+
 **All filters use `contains` (partial match), not exact match.**
 For example, `tag=anal` matches tags "Analytics", "AnalyticsTracker", "DataAnalysis".
 For exact match, use regex with anchors: `/regex ^Analytics$`.

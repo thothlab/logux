@@ -52,6 +52,7 @@ struct LogEntryData {
     message: String,
 }
 
+#[derive(Clone)]
 enum LogLine {
     System(String),      // ANSI-formatted system / command output
     Entry(LogEntryData), // Structured log entry → rendered as table row
@@ -92,7 +93,8 @@ fn compute_layout(cfg: &FormatConfig, total_w: u16) -> ColumnLayout {
 // ---------------------------------------------------------------------------
 
 struct App {
-    log_lines: VecDeque<LogLine>,
+    all_lines: VecDeque<LogLine>,  // unfiltered: all entries + system messages
+    log_lines: VecDeque<LogLine>,  // filtered view for display
     scroll_offset: usize,
     auto_scroll: bool,
 
@@ -117,7 +119,6 @@ struct App {
     save_path: Option<String>,
 
     stream_stop: Option<Arc<AtomicBool>>,
-    stream_paused: Arc<AtomicBool>,
 
     app_history: Vec<String>,
 
@@ -127,6 +128,7 @@ struct App {
 impl App {
     fn new() -> Self {
         Self {
+            all_lines: VecDeque::with_capacity(MAX_LOG_LINES),
             log_lines: VecDeque::with_capacity(MAX_LOG_LINES),
             scroll_offset: 0,
             auto_scroll: true,
@@ -152,7 +154,6 @@ impl App {
             save_path: None,
 
             stream_stop: None,
-            stream_paused: Arc::new(AtomicBool::new(false)),
 
             app_history: crate::config::load_app_history(),
 
@@ -161,21 +162,66 @@ impl App {
     }
 
     fn push_system(&mut self, msg: String) {
-        self.log_lines.push_back(LogLine::System(msg));
-        self.trim_and_scroll();
+        let line = LogLine::System(msg);
+        self.all_lines.push_back(line.clone());
+        self.log_lines.push_back(line);
+        self.trim_buffer();
+        self.auto_scroll_to_end();
     }
 
     fn push_entry(&mut self, entry: LogEntryData) {
-        self.log_lines.push_back(LogLine::Entry(entry));
-        self.trim_and_scroll();
+        let line = LogLine::Entry(entry);
+        self.all_lines.push_back(line.clone());
+        // Only add to display if it passes current filters
+        if self.entry_passes_filter(&line) {
+            self.log_lines.push_back(line);
+        }
+        self.trim_buffer();
+        self.auto_scroll_to_end();
     }
 
-    fn trim_and_scroll(&mut self) {
+    fn entry_passes_filter(&self, line: &LogLine) -> bool {
+        match line {
+            LogLine::System(_) => true,
+            LogLine::Entry(e) => {
+                let entry = crate::logs::parser::LogEntry {
+                    timestamp: e.timestamp.clone(),
+                    pid: e.pid,
+                    tid: e.tid,
+                    level: e.level,
+                    tag: e.tag.clone(),
+                    message: e.message.clone(),
+                    raw: String::new(),
+                };
+                filters::matches(&entry, &self.filters)
+            }
+        }
+    }
+
+    fn trim_buffer(&mut self) {
+        while self.all_lines.len() > MAX_LOG_LINES {
+            self.all_lines.pop_front();
+        }
         while self.log_lines.len() > MAX_LOG_LINES {
             self.log_lines.pop_front();
-            // When scrolled up, compensate so the view doesn't jump
             if !self.auto_scroll && self.scroll_offset > 0 {
                 self.scroll_offset = self.scroll_offset.saturating_sub(1);
+            }
+        }
+    }
+
+    fn auto_scroll_to_end(&mut self) {
+        if self.auto_scroll {
+            self.scroll_offset = 0;
+        }
+    }
+
+    /// Re-filter all_lines into log_lines using current filters.
+    fn rebuild_filtered(&mut self) {
+        self.log_lines.clear();
+        for line in &self.all_lines {
+            if self.entry_passes_filter(line) {
+                self.log_lines.push_back(line.clone());
             }
         }
         if self.auto_scroll {
@@ -380,36 +426,17 @@ fn start_log_stream(app: &mut App, tx: mpsc::UnboundedSender<LogEntryData>) {
     let stop = Arc::new(AtomicBool::new(false));
     app.stream_stop = Some(stop.clone());
 
-    let paused = app.stream_paused.clone();
-
-    // Snapshot all filter state for the stream task
-    let mut fs = FilterState::default();
-    fs.pids = app.filters.pids.clone();
-    fs.tags = app.filters.tags.clone();
-    fs.min_level = app.filters.min_level;
-    fs.text = app.filters.text.clone();
-    if let Some(ref re) = app.filters.regex {
-        let _ = fs.set_regex(re.as_str());
-    }
-    fs.threads = app.filters.threads.clone();
-    fs.exclude_tags = app.filters.exclude_tags.clone();
-    fs.exclude_texts = app.filters.exclude_texts.clone();
-    fs.package = app.filters.package.clone();
-    fs.package_tracking = app.filters.package_tracking;
-
     let save = app.save_path.clone();
 
     if let Ok(child) = app.adb.start_logcat(false) {
         tokio::spawn(async move {
-            stream_logs(child, fs, paused, stop, save, tx).await;
+            stream_logs(child, stop, save, tx).await;
         });
     }
 }
 
 async fn stream_logs(
     mut child: tokio::process::Child,
-    fs: FilterState,
-    paused: Arc<AtomicBool>,
     stop: Arc<AtomicBool>,
     save_path: Option<String>,
     tx: mpsc::UnboundedSender<LogEntryData>,
@@ -442,12 +469,6 @@ async fn stream_logs(
         match line_result {
             Ok(Some(line)) => {
                 if let Some(entry) = parse_logcat_line(&line) {
-                    if !filters::matches(&entry, &fs) {
-                        continue;
-                    }
-                    if paused.load(Ordering::Relaxed) {
-                        continue;
-                    }
                     let data = LogEntryData {
                         timestamp: entry.timestamp.clone(),
                         level: entry.level,
@@ -1047,7 +1068,6 @@ fn handle_mouse_event(kind: MouseEventKind, app: &mut App) {
             app.auto_scroll = false;
             if !app.paused && app.streaming {
                 app.paused = true;
-                app.stream_paused.store(true, Ordering::Relaxed);
             }
         }
         MouseEventKind::ScrollDown => {
@@ -1058,7 +1078,6 @@ fn handle_mouse_event(kind: MouseEventKind, app: &mut App) {
                 app.auto_scroll = true;
                 if app.paused && app.streaming {
                     app.paused = false;
-                    app.stream_paused.store(false, Ordering::Relaxed);
                 }
             }
         }
@@ -1078,6 +1097,7 @@ async fn handle_key_event(key: KeyEvent, app: &mut App) {
                 return;
             }
             KeyCode::Char('l') => {
+                app.all_lines.clear();
                 app.log_lines.clear();
                 app.scroll_offset = 0;
                 return;
@@ -1126,7 +1146,6 @@ async fn handle_key_event(key: KeyEvent, app: &mut App) {
                 app.auto_scroll = false;
                 if !app.paused && app.streaming {
                     app.paused = true;
-                    app.stream_paused.store(true, Ordering::Relaxed);
                 }
                 return;
             }
@@ -1138,7 +1157,6 @@ async fn handle_key_event(key: KeyEvent, app: &mut App) {
                     app.auto_scroll = true;
                     if app.paused && app.streaming {
                         app.paused = false;
-                        app.stream_paused.store(false, Ordering::Relaxed);
                     }
                 }
                 return;
@@ -1265,10 +1283,8 @@ async fn handle_key_event(key: KeyEvent, app: &mut App) {
             let step = 30;
             app.scroll_offset = (app.scroll_offset + step).min(max);
             app.auto_scroll = false;
-            // Auto-pause stream so new logs don't push the view
             if !app.paused && app.streaming {
                 app.paused = true;
-                app.stream_paused.store(true, Ordering::Relaxed);
             }
         }
         KeyCode::PageDown => {
@@ -1278,10 +1294,8 @@ async fn handle_key_event(key: KeyEvent, app: &mut App) {
             } else {
                 app.scroll_offset = 0;
                 app.auto_scroll = true;
-                // Resume stream when scrolled back to bottom
                 if app.paused && app.streaming {
                     app.paused = false;
-                    app.stream_paused.store(false, Ordering::Relaxed);
                 }
             }
         }
@@ -1333,6 +1347,7 @@ async fn handle_enter(app: &mut App) {
     }
 
     if input == "/clear" {
+        app.all_lines.clear();
         app.log_lines.clear();
         app.scroll_offset = 0;
         return;
@@ -1355,14 +1370,8 @@ async fn handle_enter(app: &mut App) {
         }
 
         // Lift auto-pause from previous command output
-        if app.paused {
+        if app.paused && app.auto_scroll {
             app.paused = false;
-            app.stream_paused.store(false, Ordering::Relaxed);
-        }
-
-        // Stop current stream so it restarts with fresh filters
-        if app.streaming {
-            app.stop_stream();
         }
 
         let mut output = Vec::new();
@@ -1397,8 +1406,6 @@ async fn handle_enter(app: &mut App) {
             app.paused = true;
         }
 
-        app.stream_paused.store(app.paused, Ordering::Relaxed);
-
         if !output.is_empty() {
             app.push_system(String::new());
             for line in output {
@@ -1416,6 +1423,9 @@ async fn handle_enter(app: &mut App) {
             app.stop_stream();
         }
 
+        // Re-filter the entire buffer with updated filters
+        app.rebuild_filtered();
+
         // Track app history
         if input.starts_with("/app ") {
             let pkg = input.strip_prefix("/app ").unwrap_or("").trim();
@@ -1431,8 +1441,6 @@ async fn handle_enter(app: &mut App) {
         app.filters.set_text(&input);
         app.formatter.highlight_text = input.clone();
         app.push_system(format!("\x1b[32mQuick filter: '{input}'\x1b[0m"));
-        if app.streaming {
-            app.stop_stream();
-        }
+        app.rebuild_filtered();
     }
 }
