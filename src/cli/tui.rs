@@ -12,7 +12,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
-use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseEventKind, EnableMouseCapture, DisableMouseCapture};
 use crossterm::terminal::{self, EnterAlternateScreen, LeaveAlternateScreen};
 use crossterm::execute;
 use ratatui::prelude::*;
@@ -244,13 +244,13 @@ pub async fn run() {
     let original_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
         let _ = terminal::disable_raw_mode();
-        let _ = execute!(io::stdout(), LeaveAlternateScreen);
+        let _ = execute!(io::stdout(), DisableMouseCapture, LeaveAlternateScreen);
         original_hook(info);
     }));
 
     terminal::enable_raw_mode().expect("Failed to enable raw mode");
     let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen).expect("Failed to enter alternate screen");
+    execute!(stdout, EnterAlternateScreen, EnableMouseCapture).expect("Failed to enter alternate screen");
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend).expect("Failed to create terminal");
 
@@ -298,10 +298,16 @@ pub async fn run() {
         let _ = terminal.draw(|frame| render_ui(frame, &app));
 
         if event::poll(Duration::from_millis(33)).unwrap_or(false) {
-            if let Ok(Event::Key(key)) = event::read() {
-                if key.kind == KeyEventKind::Press {
-                    handle_key_event(key, &mut app).await;
+            match event::read() {
+                Ok(Event::Key(key)) => {
+                    if key.kind == KeyEventKind::Press {
+                        handle_key_event(key, &mut app).await;
+                    }
                 }
+                Ok(Event::Mouse(mouse)) => {
+                    handle_mouse_event(mouse.kind, &mut app);
+                }
+                _ => {}
             }
         }
 
@@ -321,7 +327,7 @@ pub async fn run() {
     }
 
     let _ = terminal::disable_raw_mode();
-    let _ = execute!(terminal.backend_mut(), LeaveAlternateScreen);
+    let _ = execute!(terminal.backend_mut(), DisableMouseCapture, LeaveAlternateScreen);
     let _ = terminal.show_cursor();
     println!("\x1b[2mBye!\x1b[0m");
 }
@@ -1039,6 +1045,37 @@ fn parse_sgr(seq: &str) -> Style {
 }
 
 // ---------------------------------------------------------------------------
+// Mouse handling
+// ---------------------------------------------------------------------------
+
+fn handle_mouse_event(kind: MouseEventKind, app: &mut App) {
+    match kind {
+        MouseEventKind::ScrollUp => {
+            let max = app.log_lines.len().saturating_sub(1);
+            app.scroll_offset = (app.scroll_offset + 3).min(max);
+            app.auto_scroll = false;
+            if !app.paused && app.streaming {
+                app.paused = true;
+                app.stream_paused.store(true, Ordering::Relaxed);
+            }
+        }
+        MouseEventKind::ScrollDown => {
+            if app.scroll_offset > 3 {
+                app.scroll_offset -= 3;
+            } else {
+                app.scroll_offset = 0;
+                app.auto_scroll = true;
+                if app.paused && app.streaming {
+                    app.paused = false;
+                    app.stream_paused.store(false, Ordering::Relaxed);
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Key handling
 // ---------------------------------------------------------------------------
 
@@ -1082,6 +1119,36 @@ async fn handle_key_event(key: KeyEvent, app: &mut App) {
                     app.input.drain(new_end..app.cursor_pos);
                     app.cursor_pos = new_end;
                     app.update_suggestions();
+                }
+                return;
+            }
+            _ => {}
+        }
+    }
+
+    // Shift+Up/Down for scrolling (alternative to PageUp/Down)
+    if key.modifiers.contains(KeyModifiers::SHIFT) {
+        match key.code {
+            KeyCode::Up => {
+                let max = app.log_lines.len().saturating_sub(1);
+                app.scroll_offset = (app.scroll_offset + 5).min(max);
+                app.auto_scroll = false;
+                if !app.paused && app.streaming {
+                    app.paused = true;
+                    app.stream_paused.store(true, Ordering::Relaxed);
+                }
+                return;
+            }
+            KeyCode::Down => {
+                if app.scroll_offset > 5 {
+                    app.scroll_offset -= 5;
+                } else {
+                    app.scroll_offset = 0;
+                    app.auto_scroll = true;
+                    if app.paused && app.streaming {
+                        app.paused = false;
+                        app.stream_paused.store(false, Ordering::Relaxed);
+                    }
                 }
                 return;
             }
