@@ -172,12 +172,19 @@ impl App {
     fn push_entry(&mut self, entry: LogEntryData) {
         let line = LogLine::Entry(entry);
         self.all_lines.push_back(line.clone());
-        // Only add to display if it passes current filters
-        if self.entry_passes_filter(&line) {
-            self.log_lines.push_back(line);
+        // When paused, only buffer — don't update display
+        if !self.paused {
+            if self.entry_passes_filter(&line) {
+                self.log_lines.push_back(line);
+            }
+            self.trim_buffer();
+            self.auto_scroll_to_end();
+        } else {
+            // Still trim all_lines to prevent unbounded growth
+            while self.all_lines.len() > MAX_LOG_LINES {
+                self.all_lines.pop_front();
+            }
         }
-        self.trim_buffer();
-        self.auto_scroll_to_end();
     }
 
     fn entry_passes_filter(&self, line: &LogLine) -> bool {
@@ -227,6 +234,12 @@ impl App {
         if self.auto_scroll {
             self.scroll_offset = 0;
         }
+    }
+
+    /// Resume from pause: rebuild display to include entries buffered while paused.
+    fn resume(&mut self) {
+        self.paused = false;
+        self.rebuild_filtered();
     }
 
     fn is_stream_running(&self) -> bool {
@@ -1077,7 +1090,7 @@ fn handle_mouse_event(kind: MouseEventKind, app: &mut App) {
                 app.scroll_offset = 0;
                 app.auto_scroll = true;
                 if app.paused && app.streaming {
-                    app.paused = false;
+                    app.resume();
                 }
             }
         }
@@ -1156,7 +1169,7 @@ async fn handle_key_event(key: KeyEvent, app: &mut App) {
                     app.scroll_offset = 0;
                     app.auto_scroll = true;
                     if app.paused && app.streaming {
-                        app.paused = false;
+                        app.resume();
                     }
                 }
                 return;
@@ -1295,7 +1308,7 @@ async fn handle_key_event(key: KeyEvent, app: &mut App) {
                 app.scroll_offset = 0;
                 app.auto_scroll = true;
                 if app.paused && app.streaming {
-                    app.paused = false;
+                    app.resume();
                 }
             }
         }
@@ -1371,7 +1384,7 @@ async fn handle_enter(app: &mut App) {
 
         // Lift auto-pause from previous command output
         if app.paused && app.auto_scroll {
-            app.paused = false;
+            app.resume();
         }
 
         let mut output = Vec::new();
