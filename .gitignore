@@ -1,13 +1,4 @@
-__pycache__/
-*.py[cod]
-*$py.class
-*.egg-info/
-dist/
-build/
-.eggs/
-*.egg
-.venv/
-venv/
-.env
+/target
 *.log
 .DS_Store
+.env
