@@ -12,6 +12,8 @@
 - **Columnar log output** -- timestamp, level, tag, message in fixed-width columns; long messages wrap within the message column
 - **ADB Logs** -- reads `adb logcat` with colored, formatted output
 - **Smart Filtering** -- by package, tag, level, PID, regex, text -- all changeable on the fly without restart
+- **Exclusion Filters** -- `/exclude tag` and `/exclude msg` to hide unwanted lines (LogRabbit-style "None of")
+- **Inline Filter Editing** -- `/filter edit` loads current filters into the input line for editing
 - **App Tracking** -- automatic PID tracking with re-resolve on app restart
 - **5 Output Presets** -- compact, threadtime, verbose, minimal, json
 - **Auto-connect** -- single device is selected automatically; multiple devices show a numbered list
@@ -113,12 +115,19 @@ logux
 |---------|-------------|
 | `/app <package>` | Filter by app (smart PID tracking) |
 | `/pid <pid>` | Filter by PID |
-| `/tag <tag>` | Filter by tag |
-| `/level <V\|D\|I\|W\|E\|F>` | Minimum log level |
-| `/grep <text>` | Text search (case-insensitive) |
-| `/regex <pattern>` | Regex search |
+| `/tag <tag>` | Add tag filter (`-tag` remove, `reset` clear) |
+| `/level <V\|D\|I\|W\|E\|F>` | Minimum log level (`reset` to clear) |
+| `/grep <text>` | Text search, case-insensitive (`reset` to clear) |
+| `/regex <pattern>` | Regex search (`reset` to clear) |
+| `/exclude tag <name>` | Exclude tag from output |
+| `/exclude msg <text>` | Exclude lines containing text |
+| `/exclude show` | Show exclusion filters |
+| `/exclude reset` | Clear all exclusions |
+| `/exclude remove <value>` | Remove one exclusion |
 | `/filter reset` | Clear all filters |
 | `/filter show` | Show active filters |
+| `/filter edit` | Edit filters inline in the input line |
+| `/filter set <expr>` | Set filters in one line |
 | `/filter <preset>` | Load a filter preset |
 
 ### Format
