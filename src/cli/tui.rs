@@ -1253,6 +1253,12 @@ async fn handle_enter(app: &mut App) {
     }
 
     if input.starts_with('/') {
+        // Lift auto-pause from previous command output
+        if app.paused {
+            app.paused = false;
+            app.stream_paused.store(false, Ordering::Relaxed);
+        }
+
         // Stop current stream so it restarts with fresh filters
         if app.streaming {
             app.stop_stream();
@@ -1274,6 +1280,12 @@ async fn handle_enter(app: &mut App) {
                 output: &mut output,
             };
             dispatch(&mut ctx, &input).await;
+        }
+
+        // If the command produced output and stream is active, auto-pause
+        // so the user can read the output before logs flood it away.
+        if !output.is_empty() && app.streaming && !app.paused {
+            app.paused = true;
         }
 
         app.stream_paused.store(app.paused, Ordering::Relaxed);
