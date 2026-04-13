@@ -289,4 +289,30 @@ impl AdbClient {
     pub fn get_devices(&self) -> &[Device] {
         &self.devices
     }
+
+    /// Get the package name of the currently foreground (resumed) activity.
+    pub fn get_foreground_package(&self) -> Option<String> {
+        let serial = self.device_serial();
+        if let Ok(output) = self.run_sync(
+            &["shell", "dumpsys", "activity", "activities"],
+            serial,
+        ) {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            for line in stdout.lines() {
+                if line.contains("mResumedActivity") || line.contains("topResumedActivity") {
+                    // Format: "mResumedActivity: ActivityRecord{... com.pkg/.Activity ...}"
+                    let tokens: Vec<&str> = line.split_whitespace().collect();
+                    for token in tokens {
+                        if token.contains('/') {
+                            let pkg = token.split('/').next().unwrap_or("");
+                            if pkg.contains('.') {
+                                return Some(pkg.to_string());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        None
+    }
 }

@@ -99,3 +99,72 @@ pub fn delete_preset(name: &str) -> bool {
     let path = presets_dir().join(format!("{name}.json"));
     fs::remove_file(path).is_ok()
 }
+
+// --- App history ---
+
+fn app_history_file() -> PathBuf {
+    let dir = dirs::home_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join(".logux");
+    let _ = fs::create_dir_all(&dir);
+    dir.join("app_history.json")
+}
+
+pub fn load_app_history() -> Vec<String> {
+    let path = app_history_file();
+    if let Ok(content) = fs::read_to_string(&path) {
+        serde_json::from_str(&content).unwrap_or_default()
+    } else {
+        Vec::new()
+    }
+}
+
+pub fn save_app_to_history(package: &str) {
+    let mut history = load_app_history();
+    history.retain(|p| p != package);
+    history.insert(0, package.to_string());
+    if history.len() > 50 {
+        history.truncate(50);
+    }
+    let path = app_history_file();
+    let _ = fs::write(path, serde_json::to_string_pretty(&history).unwrap_or_default());
+}
+
+// --- Filter history per app ---
+
+fn filter_history_file() -> PathBuf {
+    let dir = dirs::home_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join(".logux");
+    let _ = fs::create_dir_all(&dir);
+    dir.join("filter_history.json")
+}
+
+pub fn load_filter_history(app_package: &str) -> Vec<String> {
+    let path = filter_history_file();
+    if let Ok(content) = fs::read_to_string(&path) {
+        let map: std::collections::HashMap<String, Vec<String>> =
+            serde_json::from_str(&content).unwrap_or_default();
+        map.get(app_package).cloned().unwrap_or_default()
+    } else {
+        Vec::new()
+    }
+}
+
+pub fn save_filter_to_history(app_package: &str, preset_name: &str) {
+    let path = filter_history_file();
+    let mut map: std::collections::HashMap<String, Vec<String>> = if let Ok(content) = fs::read_to_string(&path) {
+        serde_json::from_str(&content).unwrap_or_default()
+    } else {
+        std::collections::HashMap::new()
+    };
+
+    let entry = map.entry(app_package.to_string()).or_default();
+    entry.retain(|p| p != preset_name);
+    entry.insert(0, preset_name.to_string());
+    if entry.len() > 20 {
+        entry.truncate(20);
+    }
+
+    let _ = fs::write(&path, serde_json::to_string_pretty(&map).unwrap_or_default());
+}

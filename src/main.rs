@@ -7,5 +7,5 @@ mod traffic;
 
 #[tokio::main]
 async fn main() {
-    cli::shell::run().await;
+    cli::tui::run().await;
 }

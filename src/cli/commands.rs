@@ -19,6 +19,7 @@ pub struct CommandContext<'a> {
     pub paused: &'a mut bool,
     pub save_path: &'a mut Option<String>,
     pub exit_requested: &'a mut bool,
+    pub output: &'a mut Vec<String>,
 }
 
 pub async fn dispatch(ctx: &mut CommandContext<'_>, input: &str) {
@@ -27,9 +28,9 @@ pub async fn dispatch(ctx: &mut CommandContext<'_>, input: &str) {
     let args = parts.get(1).map(|s| s.trim()).unwrap_or("");
 
     match cmd.as_str() {
-        "/help" => cmd_help(),
+        "/help" => cmd_help(ctx),
         "/exit" | "/quit" | "/q" => *ctx.exit_requested = true,
-        "/clear" => print!("\x1b[2J\x1b[H"),
+        "/clear" => {} // handled by TUI directly
         "/devices" => cmd_devices(ctx),
         "/connect" => cmd_connect(ctx, args),
         "/disconnect" => cmd_disconnect(ctx),
@@ -42,19 +43,20 @@ pub async fn dispatch(ctx: &mut CommandContext<'_>, input: &str) {
         "/filter" => cmd_filter(ctx, args),
         "/format" => cmd_format(ctx, args),
         "/fields" => cmd_fields(ctx, args),
+        "/stop" => cmd_stop(ctx),
         "/pause" => cmd_pause(ctx),
         "/resume" => cmd_resume(ctx),
         "/save" => cmd_save(ctx, args),
         "/preset" => cmd_preset(ctx, args),
         "/traffic" => cmd_traffic(ctx, args).await,
         "/mock" => cmd_mock(ctx, args),
-        _ => eprintln!("\x1b[31mUnknown command: {cmd}\x1b[0m — type /help"),
+        _ => ctx.output.push(format!("\x1b[31mUnknown command: {cmd}\x1b[0m — type /help")),
     }
 }
 
-fn cmd_help() {
-    println!("\x1b[1;36m{:<30} {}\x1b[0m", "Command", "Description");
-    println!("{}", "─".repeat(60));
+fn cmd_help(ctx: &mut CommandContext) {
+    ctx.output.push(format!("\x1b[1;36m{:<30} {}\x1b[0m", "Command", "Description"));
+    ctx.output.push("─".repeat(60));
 
     let commands = [
         ("/help", "Show this help"),
@@ -73,15 +75,16 @@ fn cmd_help() {
         ("/level <V|D|I|W|E|F>", "Minimum log level"),
         ("/grep <text>", "Filter by text"),
         ("/regex <pattern>", "Filter by regex"),
-        ("/filter reset|show", "Clear or show filters"),
+        ("/filter reset|show|<preset>", "Clear, show, or load preset"),
         ("", ""),
         ("--- Format ---", ""),
         ("/format <preset>", "compact|threadtime|verbose|minimal|json"),
         ("/fields +field -field", "Toggle: timestamp,level,tag,pid,tid"),
         ("", ""),
         ("--- Control ---", ""),
-        ("/pause", "Pause log output"),
-        ("/resume", "Resume log output"),
+        ("/stop", "Stop log stream completely"),
+        ("/pause", "Toggle pause (logs captured but hidden)"),
+        ("/resume", "Resume after pause"),
         ("/save <file>", "Save matching logs to file"),
         ("", ""),
         ("--- Presets ---", ""),
@@ -104,15 +107,21 @@ fn cmd_help() {
         ("/mock enable <id>", "Enable a rule"),
         ("/mock disable <id>", "Disable a rule"),
         ("/mock reload", "Reload rules from file"),
+        ("", ""),
+        ("--- Keys ---", ""),
+        ("PageUp / PageDown", "Scroll logs"),
+        ("Tab", "Auto-complete"),
+        ("Ctrl+C", "Exit"),
+        ("Ctrl+L", "Clear log"),
     ];
 
     for (cmd, desc) in commands {
         if cmd.is_empty() {
-            println!();
+            ctx.output.push(String::new());
         } else if cmd.starts_with("---") {
-            println!("\x1b[1m{cmd}\x1b[0m");
+            ctx.output.push(format!("\x1b[1m{cmd}\x1b[0m"));
         } else {
-            println!("  \x1b[32m{:<28}\x1b[0m {}", cmd, desc);
+            ctx.output.push(format!("  \x1b[32m{:<28}\x1b[0m {}", cmd, desc));
         }
     }
 }
@@ -120,11 +129,14 @@ fn cmd_help() {
 fn cmd_devices(ctx: &mut CommandContext) {
     let devices = ctx.adb.list_devices().to_vec();
     if devices.is_empty() {
-        println!("\x1b[33mNo devices found\x1b[0m");
+        ctx.output.push("\x1b[33mNo devices found\x1b[0m".to_string());
         return;
     }
     let selected_serial = ctx.adb.selected_device.as_ref().map(|d| d.serial.clone());
-    println!("\x1b[1m{:<24} {:<14} {:<12} {:<6} {}\x1b[0m", "Serial", "State", "Model", "Type", "");
+    ctx.output.push(format!(
+        "\x1b[1m{:<24} {:<14} {:<12} {:<6} {}\x1b[0m",
+        "Serial", "State", "Model", "Type", ""
+    ));
     for dev in &devices {
         let state_color = if dev.is_online() { "32" } else { "31" };
         let selected = if selected_serial.as_deref() == Some(&dev.serial) { " <-" } else { "" };
@@ -133,25 +145,25 @@ fn cmd_devices(ctx: &mut CommandContext) {
             crate::adb::ConnectionType::Tcp => "TCP",
         };
         let model = if dev.model.is_empty() { &dev.product } else { &dev.model };
-        println!(
+        ctx.output.push(format!(
             "  {:<24} \x1b[{state_color}m{:<14}\x1b[0m {:<12} {:<6} {}",
             dev.serial,
             dev.state.as_str(),
             model,
             conn,
             selected,
-        );
+        ));
     }
 }
 
 fn cmd_connect(ctx: &mut CommandContext, args: &str) {
     if args.is_empty() {
-        println!("\x1b[31mUsage: /connect <ip:port>\x1b[0m");
+        ctx.output.push("\x1b[31mUsage: /connect <ip:port>\x1b[0m".to_string());
         return;
     }
     let (ok, msg) = ctx.adb.connect_tcp(args);
     let color = if ok { "32" } else { "31" };
-    println!("\x1b[{color}m{msg}\x1b[0m");
+    ctx.output.push(format!("\x1b[{color}m{msg}\x1b[0m"));
     if ok {
         *ctx.streaming = true;
     }
@@ -159,29 +171,29 @@ fn cmd_connect(ctx: &mut CommandContext, args: &str) {
 
 fn cmd_disconnect(ctx: &mut CommandContext) {
     let (_, msg) = ctx.adb.disconnect(None);
-    println!("\x1b[33m{msg}\x1b[0m");
+    ctx.output.push(format!("\x1b[33m{msg}\x1b[0m"));
     *ctx.streaming = false;
 }
 
 fn cmd_app(ctx: &mut CommandContext, args: &str) {
     if args.is_empty() {
-        println!("\x1b[31mUsage: /app <package.name>\x1b[0m");
+        ctx.output.push("\x1b[31mUsage: /app <package.name>\x1b[0m".to_string());
         return;
     }
     if ctx.adb.selected_device.is_none() {
         if ctx.adb.auto_select().is_none() {
-            println!("\x1b[31mNo device selected. Use /devices then /connect\x1b[0m");
+            ctx.output.push("\x1b[31mNo device selected. Use /devices then /connect\x1b[0m".to_string());
             return;
         }
         let name = ctx.adb.selected_device.as_ref().unwrap().display_name();
-        println!("\x1b[32mAuto-selected: {name}\x1b[0m");
+        ctx.output.push(format!("\x1b[32mAuto-selected: {name}\x1b[0m"));
     }
     let pid = ctx.adb.get_pid(args);
     ctx.filters.set_package(args, pid);
     if let Some(p) = pid {
-        println!("\x1b[32mTracking app: {args} (PID: {p})\x1b[0m");
+        ctx.output.push(format!("\x1b[32mTracking app: {args} (PID: {p})\x1b[0m"));
     } else {
-        println!("\x1b[33mApp {args} not running — will track when started\x1b[0m");
+        ctx.output.push(format!("\x1b[33mApp {args} not running — will track when started\x1b[0m"));
     }
     *ctx.streaming = true;
 }
@@ -190,55 +202,55 @@ fn cmd_pid(ctx: &mut CommandContext, args: &str) {
     match args.parse::<u32>() {
         Ok(pid) => {
             ctx.filters.set_pid(pid);
-            println!("\x1b[32mFilter: PID = {pid}\x1b[0m");
+            ctx.output.push(format!("\x1b[32mFilter: PID = {pid}\x1b[0m"));
             *ctx.streaming = true;
         }
-        Err(_) => println!("\x1b[31mUsage: /pid <number>\x1b[0m"),
+        Err(_) => ctx.output.push("\x1b[31mUsage: /pid <number>\x1b[0m".to_string()),
     }
 }
 
 fn cmd_tag(ctx: &mut CommandContext, args: &str) {
     if args.is_empty() {
-        println!("\x1b[31mUsage: /tag <tag_name>\x1b[0m");
+        ctx.output.push("\x1b[31mUsage: /tag <tag_name>\x1b[0m".to_string());
         return;
     }
     ctx.filters.add_tag(args);
-    println!("\x1b[32mFilter: added tag '{args}'\x1b[0m");
+    ctx.output.push(format!("\x1b[32mFilter: added tag '{args}'\x1b[0m"));
     *ctx.streaming = true;
 }
 
 fn cmd_level(ctx: &mut CommandContext, args: &str) {
     if args.is_empty() {
-        println!("\x1b[31mUsage: /level <V|D|I|W|E|F>\x1b[0m");
+        ctx.output.push("\x1b[31mUsage: /level <V|D|I|W|E|F>\x1b[0m".to_string());
         return;
     }
     match LogLevel::from_name(args) {
         Some(level) => {
             ctx.filters.set_level(level);
-            println!("\x1b[32mFilter: level >= {}\x1b[0m", level.char());
+            ctx.output.push(format!("\x1b[32mFilter: level >= {}\x1b[0m", level.char()));
         }
-        None => println!("\x1b[31mUnknown level: {args}. Use V, D, I, W, E, or F\x1b[0m"),
+        None => ctx.output.push(format!("\x1b[31mUnknown level: {args}. Use V, D, I, W, E, or F\x1b[0m")),
     }
 }
 
 fn cmd_grep(ctx: &mut CommandContext, args: &str) {
     if args.is_empty() {
-        println!("\x1b[31mUsage: /grep <text>\x1b[0m");
+        ctx.output.push("\x1b[31mUsage: /grep <text>\x1b[0m".to_string());
         return;
     }
     ctx.filters.set_text(args);
     ctx.formatter.highlight_text = args.to_string();
-    println!("\x1b[32mFilter: text contains '{args}'\x1b[0m");
+    ctx.output.push(format!("\x1b[32mFilter: text contains '{args}'\x1b[0m"));
 }
 
 fn cmd_regex(ctx: &mut CommandContext, args: &str) {
     if args.is_empty() {
-        println!("\x1b[31mUsage: /regex <pattern>\x1b[0m");
+        ctx.output.push("\x1b[31mUsage: /regex <pattern>\x1b[0m".to_string());
         return;
     }
     match ctx.filters.set_regex(args) {
-        Ok(()) => println!("\x1b[32mFilter: regex '{args}'\x1b[0m"),
-        Err(e) => println!("\x1b[31mInvalid regex: {e}\x1b[0m"),
+        Ok(()) => ctx.output.push(format!("\x1b[32mFilter: regex '{args}'\x1b[0m")),
+        Err(e) => ctx.output.push(format!("\x1b[31mInvalid regex: {e}\x1b[0m")),
     }
 }
 
@@ -247,27 +259,41 @@ fn cmd_filter(ctx: &mut CommandContext, args: &str) {
         "reset" => {
             ctx.filters.reset();
             ctx.formatter.highlight_text.clear();
-            println!("\x1b[32mAll filters cleared\x1b[0m");
+            ctx.output.push("\x1b[32mAll filters cleared\x1b[0m".to_string());
         }
         "show" => {
-            println!("\x1b[36mActive filters: {}\x1b[0m", ctx.filters.description());
+            ctx.output.push(format!("\x1b[36mActive filters: {}\x1b[0m", ctx.filters.description()));
         }
-        _ => println!("\x1b[31mUsage: /filter reset | /filter show\x1b[0m"),
+        "" => ctx.output.push("\x1b[31mUsage: /filter reset | show | <preset_name>\x1b[0m".to_string()),
+        preset_name => {
+            // Try to load a preset
+            match config::load_preset(preset_name, ctx.filters, &mut ctx.formatter.config) {
+                Ok(()) => {
+                    ctx.output.push(format!("\x1b[32mFilter preset loaded: {preset_name}\x1b[0m"));
+                    // Save to filter history for current app
+                    if !ctx.filters.package.is_empty() {
+                        config::save_filter_to_history(&ctx.filters.package, preset_name);
+                    }
+                    *ctx.streaming = true;
+                }
+                Err(e) => ctx.output.push(format!("\x1b[31m{e}\x1b[0m")),
+            }
+        }
     }
 }
 
 fn cmd_format(ctx: &mut CommandContext, args: &str) {
     if args.is_empty() {
-        println!("\x1b[36mCurrent: {}\x1b[0m", ctx.formatter.config.preset.as_str());
-        println!("\x1b[2mAvailable: compact, threadtime, verbose, minimal, json\x1b[0m");
+        ctx.output.push(format!("\x1b[36mCurrent: {}\x1b[0m", ctx.formatter.config.preset.as_str()));
+        ctx.output.push("\x1b[2mAvailable: compact, threadtime, verbose, minimal, json\x1b[0m".to_string());
         return;
     }
     match Preset::from_name(args) {
         Some(preset) => {
             ctx.formatter.config.apply_preset(preset);
-            println!("\x1b[32mFormat: {}\x1b[0m", preset.as_str());
+            ctx.output.push(format!("\x1b[32mFormat: {}\x1b[0m", preset.as_str()));
         }
-        None => println!("\x1b[31mUnknown preset: {args}\x1b[0m"),
+        None => ctx.output.push(format!("\x1b[31mUnknown preset: {args}\x1b[0m")),
     }
 }
 
@@ -282,47 +308,59 @@ fn cmd_fields(ctx: &mut CommandContext, args: &str) {
             ("tid", cfg.tid),
             ("message", cfg.message),
         ];
-        print!("Fields: ");
+        let mut line = String::from("Fields: ");
         for (name, on) in fields {
             let (sign, color) = if on { ("+", "32") } else { ("-", "31") };
-            print!("\x1b[{color}m{sign}{name}\x1b[0m ");
+            line.push_str(&format!("\x1b[{color}m{sign}{name}\x1b[0m "));
         }
-        println!();
+        ctx.output.push(line);
         return;
     }
     for token in args.split_whitespace() {
         if token.len() < 2 {
-            println!("\x1b[31mInvalid: {token}\x1b[0m");
+            ctx.output.push(format!("\x1b[31mInvalid: {token}\x1b[0m"));
             continue;
         }
         let enabled = token.starts_with('+');
         let name = &token[1..];
         if ctx.formatter.config.toggle_field(name, enabled) {
             let state = if enabled { "on" } else { "off" };
-            println!("\x1b[32m{name}: {state}\x1b[0m");
+            ctx.output.push(format!("\x1b[32m{name}: {state}\x1b[0m"));
         } else {
-            println!("\x1b[31mUnknown field: {name}\x1b[0m");
+            ctx.output.push(format!("\x1b[31mUnknown field: {name}\x1b[0m"));
         }
     }
 }
 
+fn cmd_stop(ctx: &mut CommandContext) {
+    *ctx.streaming = false;
+    *ctx.paused = false;
+    ctx.output.push("\x1b[33mStopped — log stream ended. Use /app or /pid to restart.\x1b[0m".to_string());
+}
+
 fn cmd_pause(ctx: &mut CommandContext) {
-    *ctx.paused = true;
-    println!("\x1b[33mPaused — logs still captured, /resume to continue\x1b[0m");
+    // Toggle pause
+    if *ctx.paused {
+        *ctx.paused = false;
+        ctx.output.push("\x1b[32mResumed\x1b[0m".to_string());
+    } else {
+        *ctx.paused = true;
+        ctx.output.push("\x1b[33mPaused — /pause again to resume\x1b[0m".to_string());
+    }
 }
 
 fn cmd_resume(ctx: &mut CommandContext) {
     *ctx.paused = false;
-    println!("\x1b[32mResumed\x1b[0m");
+    ctx.output.push("\x1b[32mResumed\x1b[0m".to_string());
 }
 
 fn cmd_save(ctx: &mut CommandContext, args: &str) {
     if args.is_empty() {
-        println!("\x1b[31mUsage: /save <filename>\x1b[0m");
+        ctx.output.push("\x1b[31mUsage: /save <filename>\x1b[0m".to_string());
         return;
     }
     *ctx.save_path = Some(args.to_string());
-    println!("\x1b[32mSaving matching logs to: {args}\x1b[0m");
+    ctx.output.push(format!("\x1b[32mSaving matching logs to: {args}\x1b[0m"));
 }
 
 fn cmd_preset(ctx: &mut CommandContext, args: &str) {
@@ -333,44 +371,50 @@ fn cmd_preset(ctx: &mut CommandContext, args: &str) {
     match sub.as_str() {
         "save" => {
             if name.is_empty() {
-                println!("\x1b[31mUsage: /preset save <name>\x1b[0m");
+                ctx.output.push("\x1b[31mUsage: /preset save <name>\x1b[0m".to_string());
                 return;
             }
             match config::save_preset(name, ctx.filters, &ctx.formatter.config) {
-                Ok(path) => println!("\x1b[32mPreset saved: {name} -> {}\x1b[0m", path.display()),
-                Err(e) => println!("\x1b[31mError: {e}\x1b[0m"),
+                Ok(path) => ctx.output.push(format!("\x1b[32mPreset saved: {name} -> {}\x1b[0m", path.display())),
+                Err(e) => ctx.output.push(format!("\x1b[31mError: {e}\x1b[0m")),
             }
         }
         "load" => {
             if name.is_empty() {
-                println!("\x1b[31mUsage: /preset load <name>\x1b[0m");
+                ctx.output.push("\x1b[31mUsage: /preset load <name>\x1b[0m".to_string());
                 return;
             }
             match config::load_preset(name, ctx.filters, &mut ctx.formatter.config) {
-                Ok(()) => println!("\x1b[32mPreset loaded: {name}\x1b[0m"),
-                Err(e) => println!("\x1b[31m{e}\x1b[0m"),
+                Ok(()) => {
+                    ctx.output.push(format!("\x1b[32mPreset loaded: {name}\x1b[0m"));
+                    // Track in filter history for current app
+                    if !ctx.filters.package.is_empty() {
+                        config::save_filter_to_history(&ctx.filters.package, name);
+                    }
+                }
+                Err(e) => ctx.output.push(format!("\x1b[31m{e}\x1b[0m")),
             }
         }
         "list" => {
             let presets = config::list_presets();
             if presets.is_empty() {
-                println!("\x1b[2mNo saved presets\x1b[0m");
+                ctx.output.push("\x1b[2mNo saved presets\x1b[0m".to_string());
             } else {
-                println!("\x1b[36mSaved presets:\x1b[0m {}", presets.join(", "));
+                ctx.output.push(format!("\x1b[36mSaved presets:\x1b[0m {}", presets.join(", ")));
             }
         }
         "delete" => {
             if name.is_empty() {
-                println!("\x1b[31mUsage: /preset delete <name>\x1b[0m");
+                ctx.output.push("\x1b[31mUsage: /preset delete <name>\x1b[0m".to_string());
                 return;
             }
             if config::delete_preset(name) {
-                println!("\x1b[32mDeleted: {name}\x1b[0m");
+                ctx.output.push(format!("\x1b[32mDeleted: {name}\x1b[0m"));
             } else {
-                println!("\x1b[31mNot found: {name}\x1b[0m");
+                ctx.output.push(format!("\x1b[31mNot found: {name}\x1b[0m"));
             }
         }
-        _ => println!("\x1b[31mUsage: /preset save|load|list|delete <name>\x1b[0m"),
+        _ => ctx.output.push("\x1b[31mUsage: /preset save|load|list|delete <name>\x1b[0m".to_string()),
     }
 }
 
@@ -383,26 +427,29 @@ async fn cmd_traffic(ctx: &mut CommandContext<'_>, args: &str) {
         "open" => {
             match ctx.traffic.start().await {
                 Ok(msg) => {
-                    println!("\x1b[32m{msg}\x1b[0m");
-                    println!("\x1b[2mConfigure device proxy to port {}\x1b[0m", ctx.traffic.listen_port);
+                    ctx.output.push(format!("\x1b[32m{msg}\x1b[0m"));
+                    ctx.output.push(format!("\x1b[2mConfigure device proxy to port {}\x1b[0m", ctx.traffic.listen_port));
                 }
-                Err(msg) => println!("\x1b[31m{msg}\x1b[0m"),
+                Err(msg) => ctx.output.push(format!("\x1b[31m{msg}\x1b[0m")),
             }
         }
         "close" => {
             match ctx.traffic.stop().await {
-                Ok(msg) => println!("\x1b[33m{msg}\x1b[0m"),
-                Err(msg) => println!("\x1b[31m{msg}\x1b[0m"),
+                Ok(msg) => ctx.output.push(format!("\x1b[33m{msg}\x1b[0m")),
+                Err(msg) => ctx.output.push(format!("\x1b[31m{msg}\x1b[0m")),
             }
         }
         "list" => {
             let state = ctx.traffic.state.lock().unwrap();
             let entries = state.get_filtered(50);
             if entries.is_empty() {
-                println!("\x1b[2mNo traffic captured\x1b[0m");
+                ctx.output.push("\x1b[2mNo traffic captured\x1b[0m".to_string());
                 return;
             }
-            println!("\x1b[1m{:<5} {:<12} {:<7} {:<6} {:<24} {}\x1b[0m", "#", "Time", "Method", "Status", "Host", "Path");
+            ctx.output.push(format!(
+                "\x1b[1m{:<5} {:<12} {:<7} {:<6} {:<24} {}\x1b[0m",
+                "#", "Time", "Method", "Status", "Host", "Path"
+            ));
             for e in entries {
                 let status_color = match e.status {
                     Some(s) if s < 400 => "32",
@@ -410,48 +457,55 @@ async fn cmd_traffic(ctx: &mut CommandContext<'_>, args: &str) {
                     None => "2",
                 };
                 let status_str = e.status.map(|s| s.to_string()).unwrap_or_else(|| "...".to_string());
-                println!(
+                ctx.output.push(format!(
                     "  {:<5} {:<12} {:<7} \x1b[{status_color}m{:<6}\x1b[0m {:<24} {}",
                     e.id, e.timestamp, e.method, status_str, e.host, e.path,
-                );
+                ));
             }
         }
         "inspect" => {
             let id: usize = match rest.parse() {
                 Ok(id) => id,
-                Err(_) => { println!("\x1b[31mUsage: /traffic inspect <id>\x1b[0m"); return; }
+                Err(_) => {
+                    ctx.output.push("\x1b[31mUsage: /traffic inspect <id>\x1b[0m".to_string());
+                    return;
+                }
             };
             let state = ctx.traffic.state.lock().unwrap();
             match state.get_entry(id) {
                 Some(e) => {
-                    println!("\x1b[1m--- Traffic #{} ---\x1b[0m", e.id);
-                    println!("\x1b[1m{}\x1b[0m {}", e.method, e.url);
-                    println!("Status: {}", e.status.map(|s| s.to_string()).unwrap_or("pending".to_string()));
-                    println!("\n\x1b[1mRequest Headers:\x1b[0m");
+                    ctx.output.push(format!("\x1b[1m--- Traffic #{} ---\x1b[0m", e.id));
+                    ctx.output.push(format!("\x1b[1m{}\x1b[0m {}", e.method, e.url));
+                    ctx.output.push(format!("Status: {}", e.status.map(|s| s.to_string()).unwrap_or("pending".to_string())));
+                    ctx.output.push(String::new());
+                    ctx.output.push("\x1b[1mRequest Headers:\x1b[0m".to_string());
                     for (k, v) in &e.request_headers {
-                        println!("  {k}: {v}");
+                        ctx.output.push(format!("  {k}: {v}"));
                     }
                     if !e.request_body.is_empty() {
-                        println!("\n\x1b[1mRequest Body:\x1b[0m");
-                        println!("{}", String::from_utf8_lossy(&e.request_body[..e.request_body.len().min(2000)]));
+                        ctx.output.push(String::new());
+                        ctx.output.push("\x1b[1mRequest Body:\x1b[0m".to_string());
+                        ctx.output.push(String::from_utf8_lossy(&e.request_body[..e.request_body.len().min(2000)]).to_string());
                     }
-                    println!("\n\x1b[1mResponse Headers:\x1b[0m");
+                    ctx.output.push(String::new());
+                    ctx.output.push("\x1b[1mResponse Headers:\x1b[0m".to_string());
                     for (k, v) in &e.response_headers {
-                        println!("  {k}: {v}");
+                        ctx.output.push(format!("  {k}: {v}"));
                     }
                     if !e.response_body.is_empty() {
-                        println!("\n\x1b[1mResponse Body:\x1b[0m");
-                        println!("{}", String::from_utf8_lossy(&e.response_body[..e.response_body.len().min(2000)]));
+                        ctx.output.push(String::new());
+                        ctx.output.push("\x1b[1mResponse Body:\x1b[0m".to_string());
+                        ctx.output.push(String::from_utf8_lossy(&e.response_body[..e.response_body.len().min(2000)]).to_string());
                     }
                 }
-                None => println!("\x1b[31mEntry #{rest} not found\x1b[0m"),
+                None => ctx.output.push(format!("\x1b[31mEntry #{rest} not found\x1b[0m")),
             }
         }
         "filter" => {
             let mut state = ctx.traffic.state.lock().unwrap();
             if rest.is_empty() {
                 state.filter.reset();
-                println!("\x1b[32mTraffic filter cleared\x1b[0m");
+                ctx.output.push("\x1b[32mTraffic filter cleared\x1b[0m".to_string());
                 return;
             }
             for pair in rest.split_whitespace() {
@@ -466,13 +520,13 @@ async fn cmd_traffic(ctx: &mut CommandContext<'_>, args: &str) {
                     }
                 }
             }
-            println!("\x1b[32mTraffic filter updated\x1b[0m");
+            ctx.output.push("\x1b[32mTraffic filter updated\x1b[0m".to_string());
         }
         "clear" => {
             ctx.traffic.state.lock().unwrap().clear();
-            println!("\x1b[32mTraffic cleared\x1b[0m");
+            ctx.output.push("\x1b[32mTraffic cleared\x1b[0m".to_string());
         }
-        _ => println!("\x1b[31mUsage: /traffic open|close|list|inspect|filter|clear\x1b[0m"),
+        _ => ctx.output.push("\x1b[31mUsage: /traffic open|close|list|inspect|filter|clear\x1b[0m".to_string()),
     }
 }
 
@@ -484,57 +538,63 @@ fn cmd_mock(ctx: &mut CommandContext, args: &str) {
     match sub.as_str() {
         "load" => {
             if rest.is_empty() {
-                println!("\x1b[31mUsage: /mock load <rules.yaml>\x1b[0m");
+                ctx.output.push("\x1b[31mUsage: /mock load <rules.yaml>\x1b[0m".to_string());
                 return;
             }
             match ctx.mock_engine.load(rest) {
-                Ok(msg) => println!("\x1b[32m{msg}\x1b[0m"),
-                Err(msg) => println!("\x1b[31m{msg}\x1b[0m"),
+                Ok(msg) => ctx.output.push(format!("\x1b[32m{msg}\x1b[0m")),
+                Err(msg) => ctx.output.push(format!("\x1b[31m{msg}\x1b[0m")),
             }
         }
         "list" => {
             if ctx.mock_engine.rules.is_empty() {
-                println!("\x1b[2mNo rules loaded\x1b[0m");
+                ctx.output.push("\x1b[2mNo rules loaded\x1b[0m".to_string());
                 return;
             }
-            println!("\x1b[1m{:<20} {:<8} {:<20} {:<16} {}\x1b[0m", "ID", "Enabled", "Match", "Response", "Hits");
+            ctx.output.push(format!(
+                "\x1b[1m{:<20} {:<8} {:<20} {:<16} {}\x1b[0m",
+                "ID", "Enabled", "Match", "Response", "Hits"
+            ));
             for rule in &ctx.mock_engine.rules {
                 let enabled = if rule.enabled { "\x1b[32mON\x1b[0m" } else { "\x1b[31mOFF\x1b[0m" };
                 let method = if rule.match_rule.method.is_empty() { "*" } else { &rule.match_rule.method };
                 let path = if rule.match_rule.path.is_empty() { "*" } else { &rule.match_rule.path };
                 let match_desc = format!("{method} {path}");
                 let resp_desc = format!("{} -> {}", rule.response.resp_type, rule.response.status);
-                println!("  {:<20} {:<17} {:<20} {:<16} {}", rule.id, enabled, match_desc, resp_desc, rule.hit_count);
+                ctx.output.push(format!(
+                    "  {:<20} {:<17} {:<20} {:<16} {}",
+                    rule.id, enabled, match_desc, resp_desc, rule.hit_count
+                ));
             }
         }
         "enable" => {
             if rest.is_empty() {
-                println!("\x1b[31mUsage: /mock enable <rule_id>\x1b[0m");
+                ctx.output.push("\x1b[31mUsage: /mock enable <rule_id>\x1b[0m".to_string());
                 return;
             }
             if ctx.mock_engine.enable_rule(rest) {
-                println!("\x1b[32mEnabled: {rest}\x1b[0m");
+                ctx.output.push(format!("\x1b[32mEnabled: {rest}\x1b[0m"));
             } else {
-                println!("\x1b[31mRule not found: {rest}\x1b[0m");
+                ctx.output.push(format!("\x1b[31mRule not found: {rest}\x1b[0m"));
             }
         }
         "disable" => {
             if rest.is_empty() {
-                println!("\x1b[31mUsage: /mock disable <rule_id>\x1b[0m");
+                ctx.output.push("\x1b[31mUsage: /mock disable <rule_id>\x1b[0m".to_string());
                 return;
             }
             if ctx.mock_engine.disable_rule(rest) {
-                println!("\x1b[33mDisabled: {rest}\x1b[0m");
+                ctx.output.push(format!("\x1b[33mDisabled: {rest}\x1b[0m"));
             } else {
-                println!("\x1b[31mRule not found: {rest}\x1b[0m");
+                ctx.output.push(format!("\x1b[31mRule not found: {rest}\x1b[0m"));
             }
         }
         "reload" => {
             match ctx.mock_engine.reload() {
-                Ok(msg) => println!("\x1b[32m{msg}\x1b[0m"),
-                Err(msg) => println!("\x1b[31m{msg}\x1b[0m"),
+                Ok(msg) => ctx.output.push(format!("\x1b[32m{msg}\x1b[0m")),
+                Err(msg) => ctx.output.push(format!("\x1b[31m{msg}\x1b[0m")),
             }
         }
-        _ => println!("\x1b[31mUsage: /mock load|list|enable|disable|reload\x1b[0m"),
+        _ => ctx.output.push("\x1b[31mUsage: /mock load|list|enable|disable|reload\x1b[0m".to_string()),
     }
 }
