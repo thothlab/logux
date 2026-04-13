@@ -83,7 +83,7 @@ pub fn complete(
     if cmd == "/filter" {
         let mut suggestions = Vec::new();
         // Standard subcommands
-        for sub in &["reset", "show"] {
+        for sub in &["reset", "show", "edit", "set", "tag", "level", "grep", "regex", "exclude", "app"] {
             if sub.starts_with(arg_text) {
                 suggestions.push(format!("/filter {sub}"));
             }
