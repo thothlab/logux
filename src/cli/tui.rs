@@ -1300,8 +1300,12 @@ async fn handle_enter(app: &mut App) {
 
         app.stream_paused.store(app.paused, Ordering::Relaxed);
 
-        for line in output {
-            app.push_system(line);
+        if !output.is_empty() {
+            app.push_system(String::new());
+            for line in output {
+                app.push_system(line);
+            }
+            app.push_system(String::new());
         }
 
         if exit_requested {
