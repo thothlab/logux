@@ -77,7 +77,7 @@ impl Suggestion {
 
 /// Command aliases: (alias, canonical).
 /// Typing any alias as a prefix also surfaces the canonical command.
-const ALIASES: &[(&str, &str)] = &[("/quit", "/exit"), ("/q", "/exit")];
+const ALIASES: &[(&str, &str)] = &[("/quit", "/exit")];
 
 /// Display string for a canonical command, including alias hints.
 /// E.g. `/exit` → `/exit (quit)`.
