@@ -546,18 +546,18 @@ fn render_ui(frame: &mut Frame, app: &App) {
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Min(3),                   // logs
+            Constraint::Length(1),                // status bar (above input)
             Constraint::Length(input_h),          // bordered input
             Constraint::Length(suggestion_h),     // suggestions below input
-            Constraint::Length(1),                // status bar
         ])
         .split(size);
 
     render_logs(frame, app, chunks[0]);
-    render_input(frame, app, chunks[1]);
+    render_status_bar(frame, app, chunks[1]);
+    render_input(frame, app, chunks[2]);
     if app.show_suggestions && suggestion_h > 0 {
-        render_suggestions(frame, app, chunks[2]);
+        render_suggestions(frame, app, chunks[3]);
     }
-    render_status_bar(frame, app, chunks[3]);
 }
 
 const PROMPT: &str = "> ";
