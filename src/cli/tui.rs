@@ -12,7 +12,11 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
-use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseEventKind, EnableMouseCapture, DisableMouseCapture};
+use crossterm::event::{
+    self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyEventKind,
+    KeyModifiers, KeyboardEnhancementFlags, MouseEventKind, PopKeyboardEnhancementFlags,
+    PushKeyboardEnhancementFlags,
+};
 use crossterm::terminal::{self, EnterAlternateScreen, LeaveAlternateScreen};
 use crossterm::execute;
 use ratatui::prelude::*;
@@ -302,6 +306,7 @@ impl App {
 pub async fn run() {
     let original_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
+        let _ = execute!(io::stdout(), PopKeyboardEnhancementFlags);
         let _ = terminal::disable_raw_mode();
         let _ = execute!(io::stdout(), DisableMouseCapture, LeaveAlternateScreen);
         original_hook(info);
@@ -310,6 +315,12 @@ pub async fn run() {
     terminal::enable_raw_mode().expect("Failed to enable raw mode");
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen, EnableMouseCapture).expect("Failed to enter alternate screen");
+    // Request keyboard-enhancement protocol so Shift+Enter is distinguishable.
+    // Silently no-ops on terminals that don't support it.
+    let _ = execute!(
+        stdout,
+        PushKeyboardEnhancementFlags(KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES)
+    );
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend).expect("Failed to create terminal");
 
@@ -385,6 +396,7 @@ pub async fn run() {
         }
     }
 
+    let _ = execute!(terminal.backend_mut(), PopKeyboardEnhancementFlags);
     let _ = terminal::disable_raw_mode();
     let _ = execute!(terminal.backend_mut(), DisableMouseCapture, LeaveAlternateScreen);
     let _ = terminal.show_cursor();
@@ -512,7 +524,7 @@ async fn stream_logs(
 
 fn render_ui(frame: &mut Frame, app: &App) {
     let size = frame.area();
-    if size.height < 4 || size.width < 20 {
+    if size.height < 5 || size.width < 20 {
         return;
     }
 
@@ -522,25 +534,33 @@ fn render_ui(frame: &mut Frame, app: &App) {
         0
     };
 
+    // Compute input height based on wrapped content (borders add 2 rows)
+    let content_w = (size.width as usize).saturating_sub(2).max(1);
+    let prompt_w = PROMPT.chars().count();
+    let first_row_w = content_w.saturating_sub(prompt_w).max(1);
+    let (rows, _, _) = input_layout(&app.input, app.cursor_pos, first_row_w, content_w);
+    let input_inner_h = (rows.len() as u16).clamp(1, 10);
+    let input_h = input_inner_h + 2;
+
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Min(3),
-            Constraint::Length(suggestion_h),
-            Constraint::Length(1), // separator
-            Constraint::Length(1), // status bar
-            Constraint::Length(1), // separator
-            Constraint::Length(1), // input
+            Constraint::Min(3),                   // logs
+            Constraint::Length(input_h),          // bordered input
+            Constraint::Length(suggestion_h),     // suggestions below input
+            Constraint::Length(1),                // status bar
         ])
         .split(size);
 
     render_logs(frame, app, chunks[0]);
+    render_input(frame, app, chunks[1]);
     if app.show_suggestions && suggestion_h > 0 {
-        render_suggestions(frame, app, chunks[1]);
+        render_suggestions(frame, app, chunks[2]);
     }
     render_status_bar(frame, app, chunks[3]);
-    render_input(frame, app, chunks[5]);
 }
+
+const PROMPT: &str = "> ";
 
 fn render_logs(frame: &mut Frame, app: &App, area: Rect) {
     let height = area.height as usize;
@@ -891,55 +911,122 @@ fn render_status_bar(frame: &mut Frame, app: &App, area: Rect) {
 }
 
 fn render_input(frame: &mut Frame, app: &App, area: Rect) {
-    let prompt_str = "logux > ";
-    let prompt_w = prompt_str.chars().count();
-    let total_w = area.width as usize;
-    if total_w <= prompt_w {
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(Color::DarkGray));
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    if inner.width == 0 || inner.height == 0 {
         return;
     }
-    let input_w = total_w - prompt_w;
 
-    let chars: Vec<char> = app.input.chars().collect();
-    let cursor_char = app.input[..app.cursor_pos].chars().count();
-
-    // Horizontal scroll: keep the cursor visible with a small right margin.
-    // If input fits, no scroll. Otherwise ensure cursor is within [scroll, scroll+input_w-1].
-    let scroll = if chars.len() < input_w {
-        0
-    } else if cursor_char >= input_w {
-        cursor_char + 1 - input_w
-    } else {
-        0
-    };
-
-    let visible_end = (scroll + input_w).min(chars.len());
-    let visible: String = chars[scroll..visible_end].iter().collect();
-
-    // Leading ellipsis indicator when scrolled
-    let leading = if scroll > 0 { "…" } else { "" };
-    let visible_display = if !leading.is_empty() && !visible.is_empty() {
-        // Replace first visible char with ellipsis to keep width constant
-        let mut it = visible.chars();
-        it.next();
-        format!("{leading}{}", it.collect::<String>())
-    } else {
-        visible
-    };
-
-    let prompt = Span::styled(
-        prompt_str,
-        Style::default()
-            .fg(Color::Cyan)
-            .add_modifier(Modifier::BOLD),
-    );
-    let input_span = Span::raw(visible_display);
-    let paragraph = Paragraph::new(Line::from(vec![prompt, input_span]));
-    frame.render_widget(paragraph, area);
-
-    let cx = area.x + prompt_w as u16 + (cursor_char - scroll) as u16;
-    if cx < area.x + area.width {
-        frame.set_cursor_position((cx, area.y));
+    let prompt_w = PROMPT.chars().count();
+    let content_w = inner.width as usize;
+    if content_w <= prompt_w {
+        return;
     }
+    let first_row_w = content_w - prompt_w;
+    let other_row_w = content_w;
+
+    let (rows, cursor_row, cursor_col) =
+        input_layout(&app.input, app.cursor_pos, first_row_w, other_row_w);
+
+    let visible_h = inner.height as usize;
+    let scroll_y = if rows.len() > visible_h && cursor_row >= visible_h {
+        cursor_row + 1 - visible_h
+    } else {
+        0
+    };
+
+    let lines: Vec<Line> = rows
+        .iter()
+        .enumerate()
+        .skip(scroll_y)
+        .take(visible_h)
+        .map(|(i, s)| {
+            if i == 0 {
+                Line::from(vec![
+                    Span::styled(
+                        PROMPT,
+                        Style::default()
+                            .fg(Color::Cyan)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::raw(s.clone()),
+                ])
+            } else {
+                Line::from(Span::raw(s.clone()))
+            }
+        })
+        .collect();
+
+    frame.render_widget(Paragraph::new(lines), inner);
+
+    if cursor_row >= scroll_y && cursor_row < scroll_y + visible_h {
+        let cy = inner.y + (cursor_row - scroll_y) as u16;
+        let cx = if cursor_row == 0 {
+            inner.x + prompt_w as u16 + cursor_col as u16
+        } else {
+            inner.x + cursor_col as u16
+        };
+        if cx < inner.x + inner.width && cy < inner.y + inner.height {
+            frame.set_cursor_position((cx, cy));
+        }
+    }
+}
+
+/// Lay out the input text into visual rows with wrapping + hard `\n` breaks.
+/// Returns (rows, cursor_row, cursor_col).
+fn input_layout(
+    input: &str,
+    cursor_byte: usize,
+    first_row_w: usize,
+    other_row_w: usize,
+) -> (Vec<String>, usize, usize) {
+    let first_w = first_row_w.max(1);
+    let other_w = other_row_w.max(1);
+
+    let mut rows: Vec<String> = vec![String::new()];
+    let mut cursor_row = 0usize;
+    let mut cursor_col = 0usize;
+    let mut placed = false;
+    let mut byte_pos = 0usize;
+
+    for c in input.chars() {
+        if !placed && byte_pos == cursor_byte {
+            cursor_row = rows.len() - 1;
+            cursor_col = rows.last().unwrap().chars().count();
+            placed = true;
+        }
+        if c == '\n' {
+            rows.push(String::new());
+        } else {
+            let w = if rows.len() == 1 { first_w } else { other_w };
+            if rows.last().unwrap().chars().count() >= w {
+                rows.push(String::new());
+            }
+            rows.last_mut().unwrap().push(c);
+        }
+        byte_pos += c.len_utf8();
+    }
+    if !placed {
+        cursor_row = rows.len() - 1;
+        cursor_col = rows.last().unwrap().chars().count();
+    }
+
+    // If cursor sits past a filled row's width, advance to a fresh visual row
+    let row_w = if cursor_row == 0 { first_w } else { other_w };
+    if cursor_col >= row_w {
+        cursor_row += 1;
+        cursor_col = 0;
+        if cursor_row >= rows.len() {
+            rows.push(String::new());
+        }
+    }
+
+    (rows, cursor_row, cursor_col)
 }
 
 // ---------------------------------------------------------------------------
@@ -1226,6 +1313,12 @@ async fn handle_key_event(key: KeyEvent, app: &mut App) {
                 app.cursor_pos = app.input.len();
                 return;
             }
+            KeyCode::Char('j') => {
+                app.input.insert(app.cursor_pos, '\n');
+                app.cursor_pos += 1;
+                app.update_suggestions();
+                return;
+            }
             KeyCode::Char('w') => {
                 if app.cursor_pos > 0 {
                     let before = &app.input[..app.cursor_pos];
@@ -1276,7 +1369,17 @@ async fn handle_key_event(key: KeyEvent, app: &mut App) {
     }
 
     match key.code {
-        KeyCode::Enter => handle_enter(app).await,
+        KeyCode::Enter => {
+            if key.modifiers.contains(KeyModifiers::SHIFT)
+                || key.modifiers.contains(KeyModifiers::ALT)
+            {
+                app.input.insert(app.cursor_pos, '\n');
+                app.cursor_pos += 1;
+                app.update_suggestions();
+            } else {
+                handle_enter(app).await;
+            }
+        }
 
         KeyCode::Backspace => {
             if app.cursor_pos > 0 {
@@ -1426,7 +1529,9 @@ async fn handle_enter(app: &mut App) {
         return;
     }
 
-    let input = app.input.trim().to_string();
+    // Flatten multi-line input — Shift+Enter inserts `\n` purely for readability.
+    let input = app.input.replace('\n', " ");
+    let input = input.split_whitespace().collect::<Vec<_>>().join(" ");
     if input.is_empty() {
         return;
     }
