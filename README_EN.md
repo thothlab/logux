@@ -98,7 +98,7 @@ logux
 | Command | Description |
 |---------|-------------|
 | `/help` | Show help |
-| `/exit` | Exit |
+| `/exit` (alias: `/quit`, `/q`) | Exit |
 | `/clear` | Clear screen |
 
 ### ADB
