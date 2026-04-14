@@ -235,6 +235,7 @@ Edit and press Enter. Format: space-separated `key=value` pairs.
 | `PageUp` / `PageDown` | Scroll logs (30 lines) |
 | `Tab` | Auto-complete |
 | `Up` / `Down` | Command history / suggestion navigation |
+| `Shift+Enter` / `Alt+Enter` / `Ctrl+J` | Insert newline in input |
 | `Ctrl+C` | Exit |
 | `Ctrl+L` | Clear logs |
 | `Ctrl+U` | Clear input line |

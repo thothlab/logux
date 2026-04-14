@@ -235,6 +235,7 @@ logux > /filter set app=ru.lewis.dbo tag=network level=W !tag=System.out,Instana
 | `PageUp` / `PageDown` | Прокрутка логов (30 строк) |
 | `Tab` | Автодополнение |
 | `Up` / `Down` | История команд / навигация по подсказкам |
+| `Shift+Enter` / `Alt+Enter` / `Ctrl+J` | Новая строка в поле ввода |
 | `Ctrl+C` | Выход |
 | `Ctrl+L` | Очистить логи |
 | `Ctrl+U` | Очистить строку ввода |
