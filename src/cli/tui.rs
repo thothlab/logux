@@ -105,7 +105,7 @@ struct App {
     history_idx: Option<usize>,
     history_saved_input: String,
 
-    suggestions: Vec<String>,
+    suggestions: Vec<completer::Suggestion>,
     suggestion_idx: Option<usize>,
     show_suggestions: bool,
 
@@ -279,9 +279,9 @@ impl App {
 
     fn apply_suggestion(&mut self) {
         let text = if let Some(idx) = self.suggestion_idx {
-            self.suggestions.get(idx).cloned()
+            self.suggestions.get(idx).map(|s| s.text.clone())
         } else if self.suggestions.len() == 1 {
-            Some(self.suggestions[0].clone())
+            Some(self.suggestions[0].text.clone())
         } else {
             None
         };
@@ -728,29 +728,93 @@ fn render_entry<'a>(
 }
 
 fn render_suggestions(frame: &mut Frame, app: &App, area: Rect) {
-    let items: Vec<Line> = app
+    let total_w = area.width as usize;
+    if total_w < 6 {
+        return;
+    }
+
+    // Column widths: marker (3) + command + gap (2) + description
+    let visible: Vec<&completer::Suggestion> = app
         .suggestions
         .iter()
-        .enumerate()
         .take(area.height as usize)
+        .collect();
+
+    let max_text = visible
+        .iter()
+        .map(|s| s.text.chars().count())
+        .max()
+        .unwrap_or(0);
+
+    // Cap command column so description still has room
+    let max_cmd_col = total_w.saturating_sub(3 + 2 + 8); // 8 = min desc space
+    let cmd_col = max_text.min(max_cmd_col).max(1);
+
+    let items: Vec<Line> = visible
+        .iter()
+        .enumerate()
         .map(|(i, s)| {
-            if Some(i) == app.suggestion_idx {
-                Line::from(Span::styled(
-                    format!(" > {s}"),
-                    Style::default().fg(Color::Black).bg(Color::Cyan),
-                ))
+            let selected = Some(i) == app.suggestion_idx;
+            let marker = if selected { " > " } else { "   " };
+
+            let cmd = truncate_to_width(&s.text, cmd_col);
+            let cmd_padded = format!("{cmd:<w$}", cmd = cmd, w = cmd_col);
+
+            let desc_space = total_w.saturating_sub(3 + cmd_col + 2);
+            let desc = if desc_space > 0 && !s.desc.is_empty() {
+                truncate_to_width(&s.desc, desc_space)
             } else {
-                Line::from(Span::styled(
-                    format!("   {s}"),
-                    Style::default().fg(Color::White).bg(Color::DarkGray),
-                ))
+                String::new()
+            };
+
+            let (fg_cmd, bg) = if selected {
+                (Color::Black, Color::Cyan)
+            } else {
+                (Color::White, Color::DarkGray)
+            };
+            let desc_style = if selected {
+                Style::default().fg(Color::Black).bg(Color::Cyan).add_modifier(Modifier::DIM)
+            } else {
+                Style::default().fg(Color::Gray).bg(Color::DarkGray).add_modifier(Modifier::DIM)
+            };
+
+            let desc_w = desc.chars().count();
+            let mut spans = vec![
+                Span::styled(marker.to_string(), Style::default().fg(fg_cmd).bg(bg)),
+                Span::styled(cmd_padded, Style::default().fg(fg_cmd).bg(bg)),
+                Span::styled("  ".to_string(), Style::default().bg(bg)),
+                Span::styled(desc, desc_style),
+            ];
+
+            let used = 3 + cmd_col + 2 + desc_w;
+            if used < total_w {
+                let pad = " ".repeat(total_w - used);
+                spans.push(Span::styled(pad, Style::default().bg(bg)));
             }
+            Line::from(spans)
         })
         .collect();
 
     let paragraph =
         Paragraph::new(Text::from(items)).style(Style::default().bg(Color::DarkGray));
     frame.render_widget(paragraph, area);
+}
+
+fn truncate_to_width(s: &str, max: usize) -> String {
+    let chars: Vec<char> = s.chars().collect();
+    if chars.len() <= max {
+        return s.to_string();
+    }
+    if max == 0 {
+        return String::new();
+    }
+    if max == 1 {
+        return "…".to_string();
+    }
+    let take = max - 1;
+    let mut out: String = chars[..take].iter().collect();
+    out.push('…');
+    out
 }
 
 fn render_status_bar(frame: &mut Frame, app: &App, area: Rect) {
@@ -1408,7 +1472,10 @@ async fn handle_enter(app: &mut App) {
             // Show saved filter presets as suggestions
             app.suggestions = crate::config::list_filter_presets()
                 .into_iter()
-                .map(|(name, expr)| format!("/filter set {expr}  # {name}"))
+                .map(|(name, expr)| completer::Suggestion {
+                    text: format!("/filter set {expr}"),
+                    desc: name,
+                })
                 .collect();
             app.show_suggestions = !app.suggestions.is_empty();
             app.suggestion_idx = None;

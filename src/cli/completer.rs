@@ -1,39 +1,76 @@
 //! Command completion — standalone completion logic for the TUI.
 
-pub const COMMANDS: &[(&str, &[&str])] = &[
-    ("/help", &[]),
-    ("/exit", &[]),
-    ("/clear", &[]),
-    ("/devices", &[]),
-    ("/connect", &[]),
-    ("/disconnect", &[]),
-    ("/app", &[]),
-    ("/pid", &[]),
-    ("/tag", &["reset"]),
-    ("/level", &["verbose", "debug", "info", "warn", "error", "fatal"]),
-    ("/grep", &["reset"]),
-    ("/msg", &["reset"]),
-    ("/regex", &["reset"]),
-    ("/filter", &["reset", "show", "edit", "set", "tag", "level", "grep", "msg", "regex", "exclude", "app"]),
-    ("/exclude", &["tag", "msg", "show", "reset", "remove"]),
-    ("/format", &["compact", "threadtime", "verbose", "minimal", "json"]),
-    ("/fields", &["+timestamp", "-timestamp", "+level", "-level", "+tag", "-tag", "+pid", "-pid", "+tid", "-tid"]),
-    ("/stop", &[]),
-    ("/pause", &[]),
-    ("/resume", &[]),
-    ("/save", &[]),
-    ("/preset", &["save", "load", "list", "delete"]),
-    ("/traffic", &["open", "close", "list", "inspect", "filter", "clear"]),
-    ("/mock", &["load", "list", "enable", "disable", "reload"]),
+/// (command, description, subcommands)
+pub const COMMANDS: &[(&str, &str, &[&str])] = &[
+    ("/help", "Show help for all commands", &[]),
+    ("/exit", "Exit logux", &[]),
+    ("/clear", "Clear the log view", &[]),
+    ("/devices", "List connected ADB devices", &[]),
+    ("/connect", "Connect to device over TCP (ip:port)", &[]),
+    ("/disconnect", "Disconnect current device", &[]),
+    ("/app", "Filter by app package (with PID tracking)", &[]),
+    ("/pid", "Filter by process ID", &[]),
+    ("/tag", "Add tag filter (reset to clear)", &["reset"]),
+    ("/level", "Set minimum log level", &["verbose", "debug", "info", "warn", "error", "fatal"]),
+    ("/grep", "Search by text in tag + message", &["reset"]),
+    ("/msg", "Search by text in message only", &["reset"]),
+    ("/regex", "Filter by regex pattern", &["reset"]),
+    ("/filter", "Edit, show, or load filter presets", &["reset", "show", "edit", "set", "tag", "level", "grep", "msg", "regex", "exclude", "app"]),
+    ("/exclude", "Exclude tags or messages from output", &["tag", "msg", "show", "reset", "remove"]),
+    ("/format", "Switch output format preset", &["compact", "threadtime", "verbose", "minimal", "json"]),
+    ("/fields", "Toggle visible columns", &["+timestamp", "-timestamp", "+level", "-level", "+tag", "-tag", "+pid", "-pid", "+tid", "-tid"]),
+    ("/stop", "Stop the log stream completely", &[]),
+    ("/pause", "Pause or resume display (toggle)", &[]),
+    ("/resume", "Resume display after pause", &[]),
+    ("/save", "Save matching logs to file", &[]),
+    ("/preset", "Save and load configuration presets", &["save", "load", "list", "delete"]),
+    ("/traffic", "HTTP(S) proxy inspection", &["open", "close", "list", "inspect", "filter", "clear"]),
+    ("/mock", "YAML-based mock response rules", &["load", "list", "enable", "disable", "reload"]),
 ];
 
-/// Complete the input, returning a list of full suggestion strings.
+/// Description for a /filter subcommand.
+fn filter_sub_desc(sub: &str) -> &'static str {
+    match sub {
+        "reset" => "Clear all filters",
+        "show" => "Show active filters",
+        "edit" => "Edit filters inline",
+        "set" => "Apply filters from a key=value string",
+        "tag" => "Add/remove tag filter",
+        "level" => "Set minimum level",
+        "grep" => "Text search (tag + message)",
+        "msg" => "Text search (message only)",
+        "regex" => "Regex filter",
+        "exclude" => "Manage exclusion filters",
+        "app" => "Set app package filter",
+        _ => "",
+    }
+}
+
+/// A single completion entry: the full text to insert and an optional description to show.
+pub struct Suggestion {
+    pub text: String,
+    pub desc: String,
+}
+
+impl Suggestion {
+    fn new<S: Into<String>, D: Into<String>>(text: S, desc: D) -> Self {
+        Self { text: text.into(), desc: desc.into() }
+    }
+}
+
+fn push_unique(list: &mut Vec<Suggestion>, s: Suggestion) {
+    if !list.iter().any(|x| x.text == s.text) {
+        list.push(s);
+    }
+}
+
+/// Complete the input, returning a list of (text, description) suggestions.
 pub fn complete(
     input: &str,
     app_history: &[String],
     foreground_package: Option<&str>,
     current_package: &str,
-) -> Vec<String> {
+) -> Vec<Suggestion> {
     if !input.starts_with('/') {
         return vec![];
     }
@@ -45,8 +82,8 @@ pub fn complete(
         let prefix = parts[0];
         return COMMANDS
             .iter()
-            .filter(|(cmd, _)| cmd.starts_with(prefix))
-            .map(|(cmd, _)| cmd.to_string())
+            .filter(|(cmd, _, _)| cmd.starts_with(prefix))
+            .map(|(cmd, desc, _)| Suggestion::new(*cmd, *desc))
             .collect();
     }
 
@@ -55,60 +92,43 @@ pub fn complete(
 
     // Special: /app — show history + foreground package
     if cmd == "/app" {
-        let mut suggestions = Vec::new();
-        // Currently running foreground app
+        let mut suggestions: Vec<Suggestion> = Vec::new();
         if let Some(fg) = foreground_package {
             if !fg.is_empty() && fg.contains(arg_text) {
-                let full = format!("/app {fg}");
-                suggestions.push(full);
+                push_unique(&mut suggestions, Suggestion::new(format!("/app {fg}"), "foreground app"));
             }
         }
-        // Current package if set
         if !current_package.is_empty() && current_package.contains(arg_text) {
-            let full = format!("/app {current_package}");
-            if !suggestions.contains(&full) {
-                suggestions.push(full);
-            }
+            push_unique(&mut suggestions, Suggestion::new(format!("/app {current_package}"), "current package"));
         }
-        // History items
         for pkg in app_history {
-            let full = format!("/app {pkg}");
-            if pkg.contains(arg_text) && !suggestions.contains(&full) {
-                suggestions.push(full);
+            if pkg.contains(arg_text) {
+                push_unique(&mut suggestions, Suggestion::new(format!("/app {pkg}"), "from history"));
             }
         }
         return suggestions;
     }
 
-    // Special: /filter — show presets associated with current app + reset/show
+    // Special: /filter — show subcommands + presets associated with current app
     if cmd == "/filter" {
-        let mut suggestions = Vec::new();
-        // Standard subcommands
+        let mut suggestions: Vec<Suggestion> = Vec::new();
         for sub in &["reset", "show", "edit", "set", "tag", "level", "grep", "msg", "regex", "exclude", "app"] {
             if sub.starts_with(arg_text) {
-                suggestions.push(format!("/filter {sub}"));
+                suggestions.push(Suggestion::new(format!("/filter {sub}"), filter_sub_desc(sub)));
             }
         }
-        // Filter history presets for current app
         if !current_package.is_empty() {
             let history = crate::config::load_filter_history(current_package);
             for preset in history {
                 if preset.contains(arg_text) {
-                    let full = format!("/filter {preset}");
-                    if !suggestions.contains(&full) {
-                        suggestions.push(full);
-                    }
+                    push_unique(&mut suggestions, Suggestion::new(format!("/filter {preset}"), "preset (app history)"));
                 }
             }
         }
-        // All presets as fallback
         let all_presets = crate::config::list_presets();
         for p in all_presets {
             if p.contains(arg_text) {
-                let full = format!("/filter {p}");
-                if !suggestions.contains(&full) {
-                    suggestions.push(full);
-                }
+                push_unique(&mut suggestions, Suggestion::new(format!("/filter {p}"), "saved preset"));
             }
         }
         return suggestions;
@@ -121,16 +141,19 @@ pub fn complete(
         return presets
             .iter()
             .filter(|p| p.contains(filter_text))
-            .map(|p| format!("/preset load {p}"))
+            .map(|p| Suggestion::new(format!("/preset load {p}"), "saved preset"))
             .collect();
     }
 
     // Standard subcommand completion
-    if let Some((_, subs)) = COMMANDS.iter().find(|(c, _)| *c == cmd) {
+    if let Some((_, _, subs)) = COMMANDS.iter().find(|(c, _, _)| *c == cmd) {
         return subs
             .iter()
             .filter(|s| s.starts_with(arg_text))
-            .map(|s| format!("{cmd} {s}"))
+            .map(|s| {
+                let desc = if cmd == "/filter" { filter_sub_desc(s) } else { "" };
+                Suggestion::new(format!("{cmd} {s}"), desc)
+            })
             .collect();
     }
 
