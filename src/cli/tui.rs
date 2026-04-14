@@ -1444,7 +1444,7 @@ async fn handle_enter(app: &mut App) {
         let is_control = matches!(
             cmd,
             "/stop" | "/pause" | "/resume" | "/app" | "/pid" | "/tag"
-                | "/level" | "/grep" | "/regex" | "/connect" | "/disconnect"
+                | "/level" | "/grep" | "/msg" | "/regex" | "/connect" | "/disconnect"
                 | "/clear" | "/exit" | "/quit" | "/q" | "/save"
                 | "/format" | "/fields" | "/exclude"
         );

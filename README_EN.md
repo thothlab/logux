@@ -117,7 +117,8 @@ logux
 | `/pid <pid>` | Filter by PID |
 | `/tag <tag>` | Add tag filter (`-tag` remove, `reset` clear) |
 | `/level <V\|D\|I\|W\|E\|F>` | Minimum log level (`reset` to clear) |
-| `/grep <text>` | Text search, case-insensitive (`reset` to clear) |
+| `/grep <text>` | Text search in tag + message, case-insensitive (`reset` to clear) |
+| `/msg <text>` | Text search in message only (`-text` remove, `reset` clear) |
 | `/regex <pattern>` | Regex search (`reset` to clear) |
 | `/exclude tag <name>` | Exclude tag from output |
 | `/exclude msg <text>` | Exclude lines containing text |
@@ -169,7 +170,8 @@ Edit and press Enter. Format: space-separated `key=value` pairs.
 | `app=X` | Filter by app |
 | `tag=A,B` | Tags (OR via comma) |
 | `level=W` | Minimum level |
-| `grep=text` | Text search |
+| `grep=text` | Text search (tag + message) |
+| `msg=text` | Text search (message only, repeat for OR) |
 | `regex=pattern` | Regex |
 | `!tag=X,Y` | Exclude tags |
 | `!msg=text` | Exclude by text |

@@ -39,6 +39,7 @@ pub async fn dispatch(ctx: &mut CommandContext<'_>, input: &str) {
         "/tag" => cmd_tag(ctx, args),
         "/level" => cmd_level(ctx, args),
         "/grep" => cmd_grep(ctx, args),
+        "/msg" => cmd_msg(ctx, args),
         "/regex" => cmd_regex(ctx, args),
         "/filter" => cmd_filter(ctx, args),
         "/exclude" => cmd_exclude(ctx, args),
@@ -74,7 +75,8 @@ fn cmd_help(ctx: &mut CommandContext) {
         ("/pid <pid>", "Filter by PID"),
         ("/tag <tag>", "Add tag filter (-tag remove, reset clear)"),
         ("/level <V|D|I|W|E|F>", "Min log level (reset to clear)"),
-        ("/grep <text>", "Filter by text (reset to clear)"),
+        ("/grep <text>", "Filter by text in tag+message (reset to clear)"),
+        ("/msg <text>", "Filter by text in message only (-text remove, reset clear)"),
         ("/regex <pattern>", "Filter by regex (reset to clear)"),
         ("/filter reset|show|<preset>", "Clear, show, or load preset"),
         ("/exclude tag|msg <value>", "Exclude by tag/message"),
@@ -277,6 +279,29 @@ fn cmd_grep(ctx: &mut CommandContext, args: &str) {
     ctx.output.push(format!("\x1b[32mFilter: text contains '{args}'\x1b[0m"));
 }
 
+fn cmd_msg(ctx: &mut CommandContext, args: &str) {
+    if args.is_empty() {
+        if ctx.filters.messages.is_empty() {
+            ctx.output.push("\x1b[2mNo message filters\x1b[0m".to_string());
+        } else {
+            let joined = ctx.filters.messages.join(", ");
+            ctx.output.push(format!("\x1b[36mMessage filters: {joined}\x1b[0m"));
+        }
+        ctx.output.push("\x1b[2mUsage: /msg <text> to add, /msg -<text> to remove, /msg reset to clear\x1b[0m".to_string());
+        return;
+    }
+    if args == "reset" {
+        ctx.filters.clear_messages();
+        ctx.output.push("\x1b[32mMessage filters cleared\x1b[0m".to_string());
+    } else if let Some(m) = args.strip_prefix('-') {
+        ctx.filters.remove_message(m);
+        ctx.output.push(format!("\x1b[32mRemoved message filter: {m}\x1b[0m"));
+    } else {
+        ctx.filters.add_message(args);
+        ctx.output.push(format!("\x1b[32mFilter: message contains '{args}'\x1b[0m"));
+    }
+}
+
 fn cmd_regex(ctx: &mut CommandContext, args: &str) {
     if args.is_empty() || args == "reset" {
         ctx.filters.clear_regex();
@@ -342,6 +367,10 @@ fn cmd_filter(ctx: &mut CommandContext, args: &str) {
             cmd_grep(ctx, value);
             return;
         }
+        "msg" | "message" => {
+            cmd_msg(ctx, value);
+            return;
+        }
         "regex" => {
             cmd_regex(ctx, value);
             return;
@@ -355,7 +384,7 @@ fn cmd_filter(ctx: &mut CommandContext, args: &str) {
             return;
         }
         "" => {
-            ctx.output.push("\x1b[31mUsage: /filter tag|level|grep|regex|exclude|reset|show|<preset>\x1b[0m".to_string());
+            ctx.output.push("\x1b[31mUsage: /filter tag|level|grep|msg|regex|exclude|reset|show|<preset>\x1b[0m".to_string());
         }
         preset_name => {
             // Try to load a preset

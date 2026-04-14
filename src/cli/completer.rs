@@ -12,8 +12,9 @@ pub const COMMANDS: &[(&str, &[&str])] = &[
     ("/tag", &["reset"]),
     ("/level", &["verbose", "debug", "info", "warn", "error", "fatal"]),
     ("/grep", &["reset"]),
+    ("/msg", &["reset"]),
     ("/regex", &["reset"]),
-    ("/filter", &["reset", "show", "edit", "set", "tag", "level", "grep", "regex", "exclude", "app"]),
+    ("/filter", &["reset", "show", "edit", "set", "tag", "level", "grep", "msg", "regex", "exclude", "app"]),
     ("/exclude", &["tag", "msg", "show", "reset", "remove"]),
     ("/format", &["compact", "threadtime", "verbose", "minimal", "json"]),
     ("/fields", &["+timestamp", "-timestamp", "+level", "-level", "+tag", "-tag", "+pid", "-pid", "+tid", "-tid"]),
@@ -83,7 +84,7 @@ pub fn complete(
     if cmd == "/filter" {
         let mut suggestions = Vec::new();
         // Standard subcommands
-        for sub in &["reset", "show", "edit", "set", "tag", "level", "grep", "regex", "exclude", "app"] {
+        for sub in &["reset", "show", "edit", "set", "tag", "level", "grep", "msg", "regex", "exclude", "app"] {
             if sub.starts_with(arg_text) {
                 suggestions.push(format!("/filter {sub}"));
             }

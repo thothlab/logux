@@ -11,6 +11,7 @@ pub struct FilterState {
     pub tags: HashSet<String>,
     pub min_level: LogLevel,
     pub text: String,
+    pub messages: Vec<String>,
     pub regex: Option<Regex>,
     pub threads: HashSet<u32>,
     pub package_tracking: bool,
@@ -27,6 +28,7 @@ impl Default for FilterState {
             tags: HashSet::new(),
             min_level: LogLevel::Verbose,
             text: String::new(),
+            messages: Vec::new(),
             regex: None,
             threads: HashSet::new(),
             package_tracking: false,
@@ -71,6 +73,21 @@ impl FilterState {
 
     pub fn clear_text(&mut self) {
         self.text.clear();
+    }
+
+    pub fn add_message(&mut self, msg: &str) {
+        let s = msg.to_string();
+        if !self.messages.iter().any(|m| m == &s) {
+            self.messages.push(s);
+        }
+    }
+
+    pub fn remove_message(&mut self, msg: &str) {
+        self.messages.retain(|m| m != msg);
+    }
+
+    pub fn clear_messages(&mut self) {
+        self.messages.clear();
     }
 
     pub fn clear_regex(&mut self) {
@@ -130,6 +147,16 @@ impl FilterState {
         if !self.text.is_empty() {
             parts.push(format!("text='{}'", self.text));
         }
+        if !self.messages.is_empty() {
+            parts.push(format!(
+                "msg={}",
+                self.messages
+                    .iter()
+                    .map(|m| format!("'{m}'"))
+                    .collect::<Vec<_>>()
+                    .join(",")
+            ));
+        }
         if let Some(ref re) = self.regex {
             parts.push(format!("regex='{}'", re.as_str()));
         }
@@ -174,6 +201,11 @@ impl FilterState {
         }
         if !self.text.is_empty() {
             parts.push(format!("grep={}", self.text));
+        }
+        if !self.messages.is_empty() {
+            for m in &self.messages {
+                parts.push(format!("msg={m}"));
+            }
         }
         if let Some(ref re) = self.regex {
             parts.push(format!("regex={}", re.as_str()));
@@ -224,6 +256,11 @@ impl FilterState {
                     "grep" | "text" => {
                         self.text = value.to_string();
                     }
+                    "msg" | "message" => {
+                        if !value.is_empty() {
+                            self.messages.push(value.to_string());
+                        }
+                    }
                     "regex" => {
                         let _ = self.set_regex(value);
                     }
@@ -272,10 +309,22 @@ pub fn matches(entry: &LogEntry, state: &FilterState) -> bool {
         }
     }
 
-    // Text (case-insensitive)
+    // Text (case-insensitive) — searches in tag + message
     if !state.text.is_empty() {
         let haystack = format!("{} {}", entry.tag, entry.message).to_lowercase();
         if !haystack.contains(&state.text.to_lowercase()) {
+            return false;
+        }
+    }
+
+    // Message (case-insensitive) — searches ONLY in message, OR across multiple values
+    if !state.messages.is_empty() {
+        let msg_lower = entry.message.to_lowercase();
+        if !state
+            .messages
+            .iter()
+            .any(|m| msg_lower.contains(&m.to_lowercase()))
+        {
             return false;
         }
     }

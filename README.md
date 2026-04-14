@@ -117,7 +117,8 @@ logux
 | `/pid <pid>` | Фильтр по PID |
 | `/tag <tag>` | Добавить тег-фильтр (`-tag` убрать, `reset` сбросить) |
 | `/level <V\|D\|I\|W\|E\|F>` | Минимальный уровень (`reset` сбросить) |
-| `/grep <text>` | Поиск по тексту (`reset` сбросить) |
+| `/grep <text>` | Поиск по тегу + сообщению (`reset` сбросить) |
+| `/msg <text>` | Поиск только в сообщении (`-text` убрать, `reset` сбросить) |
 | `/regex <pattern>` | Поиск по regex (`reset` сбросить) |
 | `/exclude tag <name>` | Исключить тег из вывода |
 | `/exclude msg <text>` | Исключить строки с текстом |
@@ -169,7 +170,8 @@ logux > /filter set app=ru.lewis.dbo tag=network level=W !tag=System.out,Instana
 | `app=X` | Фильтр по приложению |
 | `tag=A,B` | Теги (OR через запятую) |
 | `level=W` | Минимальный уровень |
-| `grep=text` | Текстовый поиск |
+| `grep=text` | Текстовый поиск (тег + сообщение) |
+| `msg=text` | Поиск только в сообщении (повторять для OR) |
 | `regex=pattern` | Regex |
 | `!tag=X,Y` | Исключить теги |
 | `!msg=text` | Исключить по тексту |
