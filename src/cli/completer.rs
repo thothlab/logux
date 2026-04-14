@@ -26,6 +26,7 @@ pub const COMMANDS: &[(&str, &str, &[&str])] = &[
     ("/preset", "Save and load configuration presets", &["save", "load", "list", "delete"]),
     ("/traffic", "HTTP(S) proxy inspection", &["open", "close", "list", "inspect", "filter", "clear"]),
     ("/mock", "YAML-based mock response rules", &["load", "list", "enable", "disable", "reload"]),
+    ("/mouse", "Toggle mouse capture (enables wheel scroll; blocks selection)", &["on", "off", "toggle"]),
 ];
 
 /// Description for a /filter subcommand.

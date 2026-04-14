@@ -126,6 +126,8 @@ struct App {
 
     app_history: Vec<String>,
 
+    mouse_capture: bool,
+
     should_exit: bool,
 }
 
@@ -160,6 +162,8 @@ impl App {
             stream_stop: None,
 
             app_history: crate::config::load_app_history(),
+
+            mouse_capture: false,
 
             should_exit: false,
         }
@@ -314,7 +318,9 @@ pub async fn run() {
 
     terminal::enable_raw_mode().expect("Failed to enable raw mode");
     let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen, EnableMouseCapture).expect("Failed to enter alternate screen");
+    // Do NOT enable mouse capture by default — it blocks native text selection.
+    // Users can opt in with `/mouse on` to get wheel scroll.
+    execute!(stdout, EnterAlternateScreen).expect("Failed to enter alternate screen");
     // Request keyboard-enhancement protocol so Shift+Enter is distinguishable.
     // Silently no-ops on terminals that don't support it.
     let _ = execute!(
@@ -1261,15 +1267,15 @@ fn handle_mouse_event(kind: MouseEventKind, app: &mut App) {
     match kind {
         MouseEventKind::ScrollUp => {
             let max = app.log_lines.len().saturating_sub(1);
-            app.scroll_offset = (app.scroll_offset + 3).min(max);
+            app.scroll_offset = (app.scroll_offset + 1).min(max);
             app.auto_scroll = false;
             if !app.paused && app.streaming {
                 app.paused = true;
             }
         }
         MouseEventKind::ScrollDown => {
-            if app.scroll_offset > 3 {
-                app.scroll_offset -= 3;
+            if app.scroll_offset > 1 {
+                app.scroll_offset -= 1;
             } else {
                 app.scroll_offset = 0;
                 app.auto_scroll = true;
@@ -1345,7 +1351,7 @@ async fn handle_key_event(key: KeyEvent, app: &mut App) {
         match key.code {
             KeyCode::Up => {
                 let max = app.log_lines.len().saturating_sub(1);
-                app.scroll_offset = (app.scroll_offset + 5).min(max);
+                app.scroll_offset = (app.scroll_offset + 1).min(max);
                 app.auto_scroll = false;
                 if !app.paused && app.streaming {
                     app.paused = true;
@@ -1353,8 +1359,8 @@ async fn handle_key_event(key: KeyEvent, app: &mut App) {
                 return;
             }
             KeyCode::Down => {
-                if app.scroll_offset > 5 {
-                    app.scroll_offset -= 5;
+                if app.scroll_offset > 1 {
+                    app.scroll_offset -= 1;
                 } else {
                     app.scroll_offset = 0;
                     app.auto_scroll = true;
@@ -1493,7 +1499,7 @@ async fn handle_key_event(key: KeyEvent, app: &mut App) {
 
         KeyCode::PageUp => {
             let max = app.log_lines.len().saturating_sub(1);
-            let step = 30;
+            let step = 10;
             app.scroll_offset = (app.scroll_offset + step).min(max);
             app.auto_scroll = false;
             if !app.paused && app.streaming {
@@ -1501,7 +1507,7 @@ async fn handle_key_event(key: KeyEvent, app: &mut App) {
             }
         }
         KeyCode::PageDown => {
-            let step = 30;
+            let step = 10;
             if app.scroll_offset > step {
                 app.scroll_offset -= step;
             } else {
@@ -1565,6 +1571,42 @@ async fn handle_enter(app: &mut App) {
         app.all_lines.clear();
         app.log_lines.clear();
         app.scroll_offset = 0;
+        return;
+    }
+
+    // /mouse on|off|toggle — controls mouse capture for wheel scroll.
+    // Capture blocks native text selection, so it's off by default.
+    if let Some(rest) = input.strip_prefix("/mouse") {
+        let arg = rest.trim();
+        let target = match arg {
+            "" | "toggle" => !app.mouse_capture,
+            "on" => true,
+            "off" => false,
+            _ => {
+                app.push_system(format!(
+                    "\x1b[31mUsage: /mouse [on|off|toggle] (current: {})\x1b[0m",
+                    if app.mouse_capture { "on" } else { "off" }
+                ));
+                return;
+            }
+        };
+        if target != app.mouse_capture {
+            let mut stdout = io::stdout();
+            let res = if target {
+                execute!(stdout, EnableMouseCapture)
+            } else {
+                execute!(stdout, DisableMouseCapture)
+            };
+            if res.is_ok() {
+                app.mouse_capture = target;
+            }
+        }
+        let msg = if app.mouse_capture {
+            "\x1b[32mMouse capture ON — wheel scrolls logs (hold Option/Alt to select text)\x1b[0m"
+        } else {
+            "\x1b[32mMouse capture OFF — text selection works; use Shift+Up/Down or PageUp/Down to scroll\x1b[0m"
+        };
+        app.push_system(msg.to_string());
         return;
     }
 
