@@ -46,15 +46,50 @@ fn filter_sub_desc(sub: &str) -> &'static str {
     }
 }
 
-/// A single completion entry: the full text to insert and an optional description to show.
+/// A single completion entry.
+/// `text` is inserted on Tab. `display` is shown in the suggestion list
+/// (may differ from `text`, e.g. "/exit (quit)" display vs "/exit" insert).
 pub struct Suggestion {
     pub text: String,
+    pub display: String,
     pub desc: String,
 }
 
 impl Suggestion {
     fn new<S: Into<String>, D: Into<String>>(text: S, desc: D) -> Self {
-        Self { text: text.into(), desc: desc.into() }
+        let text = text.into();
+        Self { display: text.clone(), text, desc: desc.into() }
+    }
+
+    fn with_display<S: Into<String>, DS: Into<String>, D: Into<String>>(
+        text: S,
+        display: DS,
+        desc: D,
+    ) -> Self {
+        Self {
+            text: text.into(),
+            display: display.into(),
+            desc: desc.into(),
+        }
+    }
+}
+
+/// Command aliases: (alias, canonical).
+/// Typing any alias as a prefix also surfaces the canonical command.
+const ALIASES: &[(&str, &str)] = &[("/quit", "/exit"), ("/q", "/exit")];
+
+/// Display string for a canonical command, including alias hints.
+/// E.g. `/exit` → `/exit (quit)`.
+fn command_display(cmd: &str) -> String {
+    let aliases: Vec<&str> = ALIASES
+        .iter()
+        .filter(|(_, canon)| *canon == cmd)
+        .map(|(alias, _)| alias.trim_start_matches('/'))
+        .collect();
+    if aliases.is_empty() {
+        cmd.to_string()
+    } else {
+        format!("{cmd} ({})", aliases.join(", "))
     }
 }
 
@@ -80,10 +115,27 @@ pub fn complete(
     // Still typing the command name (no space yet)
     if parts.len() == 1 && !input.ends_with(' ') {
         let prefix = parts[0];
-        return COMMANDS
+        let mut matched: Vec<&str> = COMMANDS
             .iter()
             .filter(|(cmd, _, _)| cmd.starts_with(prefix))
-            .map(|(cmd, desc, _)| Suggestion::new(*cmd, *desc))
+            .map(|(cmd, _, _)| *cmd)
+            .collect();
+        // Also match aliases → surface their canonical command
+        for (alias, canon) in ALIASES {
+            if alias.starts_with(prefix) && !matched.iter().any(|c| c == canon) {
+                matched.push(canon);
+            }
+        }
+        return matched
+            .iter()
+            .filter_map(|cmd| {
+                COMMANDS
+                    .iter()
+                    .find(|(c, _, _)| c == cmd)
+                    .map(|(c, desc, _)| {
+                        Suggestion::with_display(*c, command_display(c), *desc)
+                    })
+            })
             .collect();
     }
 

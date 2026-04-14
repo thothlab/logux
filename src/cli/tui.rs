@@ -762,7 +762,7 @@ fn render_suggestions(frame: &mut Frame, app: &App, area: Rect) {
 
     let max_text = visible
         .iter()
-        .map(|s| s.text.chars().count())
+        .map(|s| s.display.chars().count())
         .max()
         .unwrap_or(0);
 
@@ -777,7 +777,7 @@ fn render_suggestions(frame: &mut Frame, app: &App, area: Rect) {
             let selected = Some(i) == app.suggestion_idx;
             let marker = if selected { " > " } else { "   " };
 
-            let cmd = truncate_to_width(&s.text, cmd_col);
+            let cmd = truncate_to_width(&s.display, cmd_col);
             let cmd_padded = format!("{cmd:<w$}", cmd = cmd, w = cmd_col);
 
             let desc_space = total_w.saturating_sub(3 + cmd_col + 2);
@@ -1577,9 +1577,13 @@ async fn handle_enter(app: &mut App) {
             // Show saved filter presets as suggestions
             app.suggestions = crate::config::list_filter_presets()
                 .into_iter()
-                .map(|(name, expr)| completer::Suggestion {
-                    text: format!("/filter set {expr}"),
-                    desc: name,
+                .map(|(name, expr)| {
+                    let text = format!("/filter set {expr}");
+                    completer::Suggestion {
+                        display: text.clone(),
+                        text,
+                        desc: name,
+                    }
                 })
                 .collect();
             app.show_suggestions = !app.suggestions.is_empty();
