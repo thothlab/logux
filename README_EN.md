@@ -21,6 +21,7 @@
 - **Traffic Inspection** -- HTTP/HTTPS proxy via mitmproxy/mitmdump
 - **Mock Rules** -- response overrides via YAML config with hot reload
 - **Keyboard shortcuts** -- PageUp/Down scroll, Ctrl+C exit, Ctrl+L clear, Tab completion
+- **Stream resilience** -- invalid UTF-8 bytes (logcat sometimes chops large JSON payloads mid-codepoint) no longer kill the stream; on `adb logcat` exit the stream auto-reconnects with backoff 0.5s → 10s (up to 5 attempts). If that fails, `/reconnect` hard-resets the adb server.
 
 ## Requirements
 
@@ -112,6 +113,7 @@ logux
 | `/devices` | List devices |
 | `/connect <ip:port>` | Connect via TCP |
 | `/disconnect` | Disconnect |
+| `/reconnect` | Hard reset: `adb kill-server` + `start-server` + restart log stream. Use when `adb` is wedged or auto-reconnect has given up |
 
 ### Logs & Filtering
 

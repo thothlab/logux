@@ -69,6 +69,7 @@ fn cmd_help(ctx: &mut CommandContext) {
         ("/devices", "List connected devices"),
         ("/connect <ip:port>", "Connect to TCP device"),
         ("/disconnect", "Disconnect current device"),
+        ("/reconnect", "Hard-reset adb server + restart log stream"),
         ("", ""),
         ("--- Logs ---", ""),
         ("/app <package>", "Filter by app (smart PID tracking)"),

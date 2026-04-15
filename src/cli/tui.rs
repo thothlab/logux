@@ -10,7 +10,7 @@ use std::hash::{Hash, Hasher};
 use std::io::{self, Write as IoWrite};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crossterm::event::{
     self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyEventKind,
@@ -35,6 +35,14 @@ use super::commands::{dispatch, CommandContext};
 use super::completer;
 
 const MAX_LOG_LINES: usize = 10_000;
+
+/// Auto-reconnect cap — after this many consecutive failures, stop trying
+/// and ask the user to run /reconnect manually.
+const MAX_RECONNECT_ATTEMPTS: u32 = 5;
+
+/// Backoff table (indexed by attempt, 1-based). Last value is reused if we
+/// ever overflow (we shouldn't, since we cap at MAX_RECONNECT_ATTEMPTS).
+const RECONNECT_BACKOFF_MS: &[u64] = &[500, 1_000, 2_000, 5_000, 10_000];
 
 const BANNER: &str = r#" ╦  ╔═╗╔═╗╦ ╦═╗ ╦
  ║  ║ ║║ ╦║ ║╔╩╦╝
@@ -124,6 +132,14 @@ struct App {
 
     stream_stop: Option<Arc<AtomicBool>>,
 
+    /// How many consecutive auto-reconnects have been attempted without a
+    /// single successful log entry since the last failure. Reset to 0 when
+    /// a new entry arrives.
+    reconnect_attempts: u32,
+    /// When set, the main loop will wait until this instant before calling
+    /// start_log_stream again (backoff).
+    reconnect_deadline: Option<Instant>,
+
     app_history: Vec<String>,
 
     mouse_capture: bool,
@@ -160,6 +176,9 @@ impl App {
             save_path: None,
 
             stream_stop: None,
+
+            reconnect_attempts: 0,
+            reconnect_deadline: None,
 
             app_history: crate::config::load_app_history(),
 
@@ -405,10 +424,25 @@ pub async fn run() {
     // Main event loop
     loop {
         if app.streaming && !app.is_stream_running() {
-            start_log_stream(&mut app, log_tx.clone(), status_tx.clone());
+            let ready = app
+                .reconnect_deadline
+                .map_or(true, |d| Instant::now() >= d);
+            if ready {
+                app.reconnect_deadline = None;
+                start_log_stream(&mut app, log_tx.clone(), status_tx.clone());
+            }
         }
 
         while let Ok(entry) = log_rx.try_recv() {
+            // First successful entry after a reconnect storm → clear state
+            // and tell the user the stream is healthy again.
+            if app.reconnect_attempts > 0 {
+                app.push_system(
+                    "\x1b[32m✓ Log stream reconnected — resuming\x1b[0m".into(),
+                );
+                app.reconnect_attempts = 0;
+                app.reconnect_deadline = None;
+            }
             app.push_entry(entry);
         }
 
@@ -496,40 +530,61 @@ fn startup_devices(app: &mut App) {
 // Log streaming
 // ---------------------------------------------------------------------------
 
-/// Surface stream lifecycle events to the user.
-/// Auto-restart is intentionally NOT done here — we want the user to see why
-/// the stream ended and decide whether to reconnect.
+/// Surface stream lifecycle events to the user and schedule auto-reconnect
+/// for transient failures (adb logcat exit, I/O error, or spawn failure).
+/// The reconnect itself happens in the main loop once the deadline elapses.
 fn handle_stream_status(app: &mut App, status: StreamStatus) {
     match status {
         StreamStatus::StoppedByUser => {
-            // Silent — user already knows (e.g. /stop, /app switch).
+            // Silent — user already knows (e.g. /stop, /app switch, /reconnect).
+            app.reconnect_attempts = 0;
+            app.reconnect_deadline = None;
         }
         StreamStatus::LogcatExited => {
-            app.streaming = false;
             app.stop_stream();
-            app.push_system(
-                "\x1b[33m⚠ Log stream ended: adb logcat exited. \
-                 Device may have disconnected or `adb` was killed. \
-                 Try /devices or reconnect, then /app <package> to resume.\x1b[0m"
-                    .into(),
+            schedule_auto_reconnect(
+                app,
+                "adb logcat exited (device may have disconnected)",
             );
         }
         StreamStatus::IoError(msg) => {
-            app.streaming = false;
             app.stop_stream();
-            app.push_system(format!(
-                "\x1b[31m⚠ Log stream I/O error: {msg}. \
-                 Check `adb` connection (usb cable, wifi, `adb devices`).\x1b[0m"
-            ));
+            schedule_auto_reconnect(app, &format!("I/O error: {msg}"));
         }
         StreamStatus::FailedToStart(msg) => {
-            app.streaming = false;
             app.stop_stream();
-            app.push_system(format!(
-                "\x1b[31m⚠ Failed to start log stream: {msg}\x1b[0m"
-            ));
+            schedule_auto_reconnect(app, &format!("failed to start adb logcat: {msg}"));
         }
     }
+}
+
+/// Either queue the next reconnect with backoff, or give up and prompt the
+/// user for /reconnect. Keeps `app.streaming = true` so the main loop picks
+/// it up automatically when the deadline elapses.
+fn schedule_auto_reconnect(app: &mut App, reason: &str) {
+    if app.reconnect_attempts >= MAX_RECONNECT_ATTEMPTS {
+        app.streaming = false;
+        app.reconnect_deadline = None;
+        app.push_system(format!(
+            "\x1b[31m⚠ Log stream failed ({reason}). Auto-reconnect \
+             gave up after {MAX_RECONNECT_ATTEMPTS} attempts. \
+             Run /reconnect to reset `adb` and retry.\x1b[0m"
+        ));
+        return;
+    }
+
+    let idx = (app.reconnect_attempts as usize).min(RECONNECT_BACKOFF_MS.len() - 1);
+    let delay_ms = RECONNECT_BACKOFF_MS[idx];
+    app.reconnect_attempts += 1;
+    app.reconnect_deadline = Some(Instant::now() + Duration::from_millis(delay_ms));
+    app.streaming = true;
+
+    app.push_system(format!(
+        "\x1b[33m⚠ Log stream interrupted ({reason}). \
+         Auto-reconnecting in {:.1}s (attempt {}/{MAX_RECONNECT_ATTEMPTS})…\x1b[0m",
+        delay_ms as f64 / 1000.0,
+        app.reconnect_attempts,
+    ));
 }
 
 fn start_log_stream(
@@ -585,7 +640,12 @@ async fn stream_logs(
         None => return StreamStatus::IoError("no stdout from adb logcat".into()),
     };
 
-    let mut reader = BufReader::new(stdout).lines();
+    // Raw byte reader — we decode with from_utf8_lossy so invalid bytes
+    // (logcat sometimes chops long messages mid-UTF-8-codepoint at ~4k)
+    // don't kill the stream. Without this, tokio's Lines returns InvalidData
+    // and the entire logcat session dies.
+    let mut reader = BufReader::new(stdout);
+    let mut buf: Vec<u8> = Vec::with_capacity(8192);
 
     let mut save_file = save_path.and_then(|p| {
         std::fs::OpenOptions::new()
@@ -600,13 +660,19 @@ async fn stream_logs(
             break StreamStatus::StoppedByUser;
         }
 
-        let line_result = tokio::select! {
-            r = reader.next_line() => r,
+        buf.clear();
+        let read_result = tokio::select! {
+            r = reader.read_until(b'\n', &mut buf) => r,
             _ = tokio::time::sleep(Duration::from_millis(200)) => continue,
         };
 
-        match line_result {
-            Ok(Some(line)) => {
+        match read_result {
+            Ok(0) => break StreamStatus::LogcatExited,
+            Ok(_) => {
+                while matches!(buf.last(), Some(b'\n') | Some(b'\r')) {
+                    buf.pop();
+                }
+                let line = String::from_utf8_lossy(&buf);
                 if let Some(entry) = parse_logcat_line(&line) {
                     let data = LogEntryData {
                         timestamp: entry.timestamp.clone(),
@@ -625,7 +691,6 @@ async fn stream_logs(
                     }
                 }
             }
-            Ok(None) => break StreamStatus::LogcatExited,
             Err(e) => break StreamStatus::IoError(format!("{e}")),
         }
     };
@@ -1895,6 +1960,72 @@ async fn handle_enter(app: &mut App) {
         return;
     }
 
+    // /reconnect — hard-reset adb server and restart the log stream.
+    // Use this when auto-reconnect gave up or the adb server is wedged.
+    if input.trim() == "/reconnect" {
+        app.stop_stream();
+        app.streaming = false;
+        app.reconnect_attempts = 0;
+        app.reconnect_deadline = None;
+
+        app.push_system("\x1b[36m/reconnect: killing adb server…\x1b[0m".into());
+        let (k_ok, k_msg) = app.adb.kill_server();
+        app.push_system(format!(
+            "\x1b[{}m  kill-server: {k_msg}\x1b[0m",
+            if k_ok { "2" } else { "31" }
+        ));
+
+        app.push_system("\x1b[36m  starting adb server…\x1b[0m".into());
+        let (s_ok, s_msg) = app.adb.start_server();
+        app.push_system(format!(
+            "\x1b[{}m  start-server: {s_msg}\x1b[0m",
+            if s_ok { "32" } else { "31" }
+        ));
+
+        if !s_ok {
+            app.push_system(
+                "\x1b[31m/reconnect failed — check `adb` installation. \
+                 Not restarting log stream.\x1b[0m"
+                    .into(),
+            );
+            return;
+        }
+
+        // Re-resolve the device list; selected_device may now be stale.
+        app.adb.list_devices();
+        if app.adb.selected_device.is_none() {
+            if app.adb.auto_select().is_none() {
+                app.push_system(
+                    "\x1b[33m/reconnect: no device available. Plug in a \
+                     device or use /connect <ip:port>, then /app <package>.\x1b[0m"
+                        .into(),
+                );
+                return;
+            }
+            let name = app.adb.selected_device.as_ref().unwrap().display_name();
+            app.push_system(format!("\x1b[32m  auto-selected: {name}\x1b[0m"));
+        }
+
+        // If a package filter is active, refresh its PID (the old one is
+        // almost certainly stale after adb server bounce).
+        let pkg = app.filters.package.clone();
+        if !pkg.is_empty() {
+            let pid = app.adb.get_pid(&pkg);
+            app.filters.set_package(&pkg, pid);
+            if let Some(p) = pid {
+                app.push_system(format!(
+                    "\x1b[32m  re-tracking {pkg} (PID: {p})\x1b[0m"
+                ));
+            }
+        }
+
+        app.streaming = true;
+        app.push_system(
+            "\x1b[32m/reconnect: log stream will resume on next tick.\x1b[0m".into(),
+        );
+        return;
+    }
+
     // /forget — clear all auto-saved filter history (presets + per-app + history)
     if input.trim() == "/forget" {
         let (p, a, h) = crate::config::clear_saved_filters();
@@ -1957,7 +2088,7 @@ async fn handle_enter(app: &mut App) {
             cmd,
             "/stop" | "/pause" | "/resume" | "/app" | "/pid" | "/tag"
                 | "/level" | "/grep" | "/msg" | "/regex" | "/connect" | "/disconnect"
-                | "/clear" | "/exit" | "/quit" | "/q" | "/save"
+                | "/reconnect" | "/clear" | "/exit" | "/quit" | "/q" | "/save"
                 | "/format" | "/fields" | "/exclude"
         );
         if !is_control && !output.is_empty() && app.streaming && !app.paused {

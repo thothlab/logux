@@ -276,6 +276,42 @@ impl AdbClient {
         cmd.spawn()
     }
 
+    /// Kill the local adb server. Returns (ok, message).
+    pub fn kill_server(&self) -> (bool, String) {
+        match self.run_sync(&["kill-server"], None) {
+            Ok(output) => {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                let msg = format!("{}{}", stdout.trim(), stderr.trim());
+                let msg = if msg.is_empty() {
+                    "adb server killed".to_string()
+                } else {
+                    msg
+                };
+                (output.status.success(), msg)
+            }
+            Err(e) => (false, format!("adb kill-server failed: {e}")),
+        }
+    }
+
+    /// Start the local adb server. Returns (ok, message).
+    pub fn start_server(&self) -> (bool, String) {
+        match self.run_sync(&["start-server"], None) {
+            Ok(output) => {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                let msg = format!("{}{}", stdout.trim(), stderr.trim());
+                let msg = if msg.is_empty() {
+                    "adb server started".to_string()
+                } else {
+                    msg
+                };
+                (output.status.success(), msg)
+            }
+            Err(e) => (false, format!("adb start-server failed: {e}")),
+        }
+    }
+
     pub fn check_adb(&self) -> (bool, String) {
         match self.run_sync(&["version"], None) {
             Ok(output) => {

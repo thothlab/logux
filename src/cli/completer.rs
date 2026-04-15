@@ -8,6 +8,7 @@ pub const COMMANDS: &[(&str, &str, &[&str])] = &[
     ("/devices", "List connected ADB devices", &[]),
     ("/connect", "Connect to device over TCP (ip:port)", &[]),
     ("/disconnect", "Disconnect current device", &[]),
+    ("/reconnect", "Hard-reset adb server and restart log stream", &[]),
     ("/app", "Filter by app package (with PID tracking)", &[]),
     ("/pid", "Filter by process ID", &[]),
     ("/tag", "Add tag filter (reset to clear)", &["reset"]),
