@@ -31,13 +31,13 @@
 
 ## Installation
 
-### Option 1: Homebrew (recommended for macOS)
+### Option 1: Homebrew (recommended for macOS and Linux)
 
 ```bash
 brew install thothlab/logux/logux
 ```
 
-You get a prebuilt binary (Apple Silicon or Intel, auto-selected), no Rust, no `cargo`. Homebrew strips the Gatekeeper quarantine automatically — no `xattr` dance.
+You get a prebuilt binary (macOS arm64 / Intel, Linux arm64 / x86_64 — auto-selected), no Rust, no `cargo`. On macOS, Homebrew strips the Gatekeeper quarantine automatically — no `xattr` dance.
 
 Update: `brew update && brew upgrade logux`. Uninstall: `brew uninstall logux`.
 
@@ -59,7 +59,21 @@ sudo mv logux /usr/local/bin/
 logux
 ```
 
-No Rust / `cargo` required. You do still need [ADB](https://developer.android.com/tools/adb) installed.
+```bash
+# Linux (x86_64)
+curl -L https://github.com/thothlab/logux/releases/latest/download/logux-linux-x86_64.tar.gz | tar xz
+sudo mv logux /usr/local/bin/
+logux
+```
+
+```bash
+# Linux (arm64 — Raspberry Pi, AWS Graviton, Oracle Ampere)
+curl -L https://github.com/thothlab/logux/releases/latest/download/logux-linux-arm64.tar.gz | tar xz
+sudo mv logux /usr/local/bin/
+logux
+```
+
+No Rust / `cargo` required. You do still need [ADB](https://developer.android.com/tools/adb) installed. Linux binaries are dynamically linked against `glibc` — should run out of the box on Debian / Ubuntu / RHEL / Arch.
 
 > **macOS Gatekeeper:** if you get "cannot verify developer" on first launch, run `xattr -d com.apple.quarantine $(which logux)` and try again.
 

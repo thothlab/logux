@@ -31,13 +31,13 @@
 
 ## Установка
 
-### Вариант 1: Homebrew (рекомендуется для macOS)
+### Вариант 1: Homebrew (рекомендуется для macOS и Linux)
 
 ```bash
 brew install thothlab/logux/logux
 ```
 
-Это поставит готовый бинарник (Apple Silicon или Intel автоматически), без Rust и без `cargo`. Gatekeeper-карантин Homebrew снимает сам -- `xattr` плясок не требуется.
+Это поставит готовый бинарник (macOS arm64 / Intel, Linux arm64 / x86_64 -- auto-select), без Rust и без `cargo`. На macOS Gatekeeper-карантин Homebrew снимает сам -- `xattr` плясок не требуется.
 
 Обновление: `brew update && brew upgrade logux`. Удаление: `brew uninstall logux`.
 
@@ -59,7 +59,21 @@ sudo mv logux /usr/local/bin/
 logux
 ```
 
-Rust и `cargo` при этом не нужны. Требуется только установленный [ADB](https://developer.android.com/tools/adb).
+```bash
+# Linux (x86_64)
+curl -L https://github.com/thothlab/logux/releases/latest/download/logux-linux-x86_64.tar.gz | tar xz
+sudo mv logux /usr/local/bin/
+logux
+```
+
+```bash
+# Linux (arm64 -- Raspberry Pi, AWS Graviton, Oracle Ampere)
+curl -L https://github.com/thothlab/logux/releases/latest/download/logux-linux-arm64.tar.gz | tar xz
+sudo mv logux /usr/local/bin/
+logux
+```
+
+Rust и `cargo` при этом не нужны. Требуется только установленный [ADB](https://developer.android.com/tools/adb). Linux-бинарники динамически слинкованы с `glibc` -- должны работать на Debian / Ubuntu / RHEL / Arch из коробки.
 
 > **macOS Gatekeeper:** если при первом запуске появится «не удалось проверить разработчика», выполни `xattr -d com.apple.quarantine $(which logux)` и запусти снова.
 

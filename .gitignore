@@ -1,5 +1,7 @@
 /target
+/target-linux-arm64
 *.log
 .DS_Store
 .env
 dist/
+dist-linux/
