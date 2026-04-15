@@ -180,15 +180,41 @@ impl App {
     fn push_entry(&mut self, entry: LogEntryData) {
         let line = LogLine::Entry(entry);
         self.all_lines.push_back(line.clone());
+        let passes = self.entry_passes_filter(&line);
+
+        // Write to save file if set and entry matches filters
+        if passes {
+            if let Some(ref path) = self.save_path {
+                if let LogLine::Entry(ref e) = line {
+                    let row = format!(
+                        "{} {} {}/{} {}: {}\n",
+                        e.timestamp,
+                        e.level.char(),
+                        e.pid,
+                        e.tid,
+                        e.tag,
+                        e.message
+                    );
+                    let _ = std::fs::OpenOptions::new()
+                        .create(true)
+                        .append(true)
+                        .open(path)
+                        .and_then(|mut f| {
+                            use std::io::Write;
+                            f.write_all(row.as_bytes())
+                        });
+                }
+            }
+        }
+
         // When paused, only buffer — don't update display
         if !self.paused {
-            if self.entry_passes_filter(&line) {
+            if passes {
                 self.log_lines.push_back(line);
             }
             self.trim_buffer();
             self.auto_scroll_to_end();
         } else {
-            // Still trim all_lines to prevent unbounded growth
             while self.all_lines.len() > MAX_LOG_LINES {
                 self.all_lines.pop_front();
             }
