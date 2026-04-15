@@ -646,17 +646,11 @@ fn render_entry<'a>(
     let mut metadata: Vec<Span<'a>> = Vec::new();
 
     if cfg.timestamp && layout.ts_w > 0 {
-        let w = layout.ts_w - 1;
-        let ts = if entry.timestamp.len() > w {
-            entry.timestamp[..w].to_string()
-        } else {
-            format!("{:<w$}", entry.timestamp)
-        };
         metadata.push(Span::styled(
-            ts,
+            entry.timestamp.clone(),
             Style::default().fg(Color::Gray),
         ));
-        metadata.push(Span::raw(" "));
+        metadata.push(Span::raw("  "));
     }
 
     if cfg.level && layout.level_w > 0 {
@@ -665,30 +659,28 @@ fn render_entry<'a>(
             format!(" {ch} "),
             level_style(entry.level),
         ));
+        metadata.push(Span::raw(" "));
     }
 
     if cfg.pid && layout.pid_w > 0 {
         metadata.push(Span::styled(
-            format!("{:>5}  ", entry.pid),
+            format!("{}", entry.pid),
             Style::default().add_modifier(Modifier::DIM),
         ));
+        metadata.push(Span::raw(" "));
     }
 
     if cfg.tid && layout.tid_w > 0 {
         metadata.push(Span::styled(
-            format!("{:<5}  ", entry.tid),
+            format!("{}", entry.tid),
             Style::default().add_modifier(Modifier::DIM),
         ));
+        metadata.push(Span::raw(" "));
     }
 
     if cfg.tag && layout.tag_w > 0 {
-        let tag_display = if entry.tag.len() > 24 {
-            &entry.tag[..24]
-        } else {
-            &entry.tag
-        };
         metadata.push(Span::styled(
-            format!("{:<24}", tag_display),
+            entry.tag.clone(),
             tag_style(&entry.tag),
         ));
     }
