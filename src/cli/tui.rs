@@ -687,7 +687,10 @@ fn render_entry<'a>(
 
     let mut lines: Vec<Line<'a>> = Vec::new();
 
-    // First line: metadata only
+    // Blank separator line before each entry (visual-only, not stored in buffer)
+    lines.push(Line::from(""));
+
+    // Metadata line: timestamp, level, tag (no message)
     lines.push(Line::from(metadata));
 
     // Message on separate line(s) with indentation
