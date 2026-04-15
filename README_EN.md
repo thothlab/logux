@@ -31,7 +31,17 @@
 
 ## Installation
 
-### Option 1: prebuilt binary (recommended)
+### Option 1: Homebrew (recommended for macOS)
+
+```bash
+brew install thothlab/logux/logux
+```
+
+You get a prebuilt binary (Apple Silicon or Intel, auto-selected), no Rust, no `cargo`. Homebrew strips the Gatekeeper quarantine automatically — no `xattr` dance.
+
+Update: `brew update && brew upgrade logux`. Uninstall: `brew uninstall logux`.
+
+### Option 2: prebuilt binary (manual)
 
 Grab the right archive for your platform from the [releases page](https://github.com/thothlab/logux/releases/latest):
 
@@ -53,7 +63,7 @@ No Rust / `cargo` required. You do still need [ADB](https://developer.android.co
 
 > **macOS Gatekeeper:** if you get "cannot verify developer" on first launch, run `xattr -d com.apple.quarantine $(which logux)` and try again.
 
-### Option 2: build from source
+### Option 3: build from source
 
 #### 1. Install Rust (if not already installed)
 
