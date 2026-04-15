@@ -31,14 +31,38 @@
 
 ## Installation
 
-### 1. Install Rust (if not already installed)
+### Option 1: prebuilt binary (recommended)
+
+Grab the right archive for your platform from the [releases page](https://github.com/thothlab/logux/releases/latest):
+
+```bash
+# macOS (Apple Silicon, M1/M2/M3/M4)
+curl -L https://github.com/thothlab/logux/releases/latest/download/logux-macos-arm64.tar.gz | tar xz
+sudo mv logux /usr/local/bin/
+logux
+```
+
+```bash
+# macOS (Intel)
+curl -L https://github.com/thothlab/logux/releases/latest/download/logux-macos-x86_64.tar.gz | tar xz
+sudo mv logux /usr/local/bin/
+logux
+```
+
+No Rust / `cargo` required. You do still need [ADB](https://developer.android.com/tools/adb) installed.
+
+> **macOS Gatekeeper:** if you get "cannot verify developer" on first launch, run `xattr -d com.apple.quarantine $(which logux)` and try again.
+
+### Option 2: build from source
+
+#### 1. Install Rust (if not already installed)
 
 ```bash
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 source "$HOME/.cargo/env"
 ```
 
-### 2. Build from source
+#### 2. Build from source
 
 ```bash
 git clone https://github.com/thothlab/logux.git
@@ -48,7 +72,7 @@ cargo build --release
 
 Binary: `./target/release/logux`
 
-### System-wide install
+#### System-wide install
 
 ```bash
 cargo install --path .
@@ -56,7 +80,7 @@ cargo install --path .
 
 After this, `logux` is available from any directory.
 
-### Update
+#### Update from source
 
 ```bash
 cd logux && git pull && cargo build --release && cargo install --path .
@@ -306,7 +330,7 @@ src/
 
 | Tag | Language | Description |
 |-----|----------|-------------|
-| `v2.1.0` | Rust | TUI with columnar layout, ratatui |
+| `v2.1.0` | Rust | TUI with columnar layout, resilient stream (UTF-8 lossy), auto-reconnect, `/reconnect` |
 | `v2.0.0` | Rust | First Rust version (rustyline REPL) |
 | `v1.0.0-python` | Python | Previous version (prompt_toolkit + rich + mitmproxy) |
 

@@ -46,7 +46,7 @@ const RECONNECT_BACKOFF_MS: &[u64] = &[500, 1_000, 2_000, 5_000, 10_000];
 
 const BANNER: &str = r#" ╦  ╔═╗╔═╗╦ ╦═╗ ╦
  ║  ║ ║║ ╦║ ║╔╩╦╝
- ╩═╝╚═╝╚═╝╚═╝╩ ╚═  v2.0"#;
+ ╩═╝╚═╝╚═╝╚═╝╩ ╚═  v2.1"#;
 
 const STACKTRACE_MARKERS: &[&str] = &["at ", "Caused by:", "java.", "kotlin.", "android."];
 

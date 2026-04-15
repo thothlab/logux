@@ -31,14 +31,38 @@
 
 ## Установка
 
-### 1. Установить Rust (если ещё не установлен)
+### Вариант 1: скачать готовый бинарник (рекомендуется)
+
+На странице [релизов](https://github.com/thothlab/logux/releases/latest) скачай архив под свою платформу, распакуй и положи бинарник в `$PATH`:
+
+```bash
+# macOS (Apple Silicon, M1/M2/M3/M4)
+curl -L https://github.com/thothlab/logux/releases/latest/download/logux-macos-arm64.tar.gz | tar xz
+sudo mv logux /usr/local/bin/
+logux
+```
+
+```bash
+# macOS (Intel)
+curl -L https://github.com/thothlab/logux/releases/latest/download/logux-macos-x86_64.tar.gz | tar xz
+sudo mv logux /usr/local/bin/
+logux
+```
+
+Rust и `cargo` при этом не нужны. Требуется только установленный [ADB](https://developer.android.com/tools/adb).
+
+> **macOS Gatekeeper:** если при первом запуске появится «не удалось проверить разработчика», выполни `xattr -d com.apple.quarantine $(which logux)` и запусти снова.
+
+### Вариант 2: собрать из исходников
+
+#### 1. Установить Rust (если ещё не установлен)
 
 ```bash
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 source "$HOME/.cargo/env"
 ```
 
-### 2. Собрать из исходников
+#### 2. Собрать из исходников
 
 ```bash
 git clone https://github.com/thothlab/logux.git
@@ -48,7 +72,7 @@ cargo build --release
 
 Бинарник: `./target/release/logux`
 
-### Установка в систему
+#### Установка в систему
 
 ```bash
 cargo install --path .
@@ -56,7 +80,7 @@ cargo install --path .
 
 После этого `logux` доступен из любой директории.
 
-### Обновление
+#### Обновление из исходников
 
 ```bash
 cd logux && git pull && cargo build --release && cargo install --path .
@@ -306,7 +330,7 @@ src/
 
 | Тег | Язык | Описание |
 |-----|------|----------|
-| `v2.1.0` | Rust | TUI с колоночной раскладкой, ratatui |
+| `v2.1.0` | Rust | TUI с колоночной раскладкой, устойчивый стрим (UTF-8 lossy), авто-переподключение, `/reconnect` |
 | `v2.0.0` | Rust | Первая Rust-версия (rustyline REPL) |
 | `v1.0.0-python` | Python | Предыдущая версия (prompt_toolkit + rich + mitmproxy) |
 
