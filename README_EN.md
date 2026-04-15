@@ -238,7 +238,7 @@ Edit and press Enter. Format: space-separated `key=value` pairs.
 
 | Key | Action |
 |-----|--------|
-| `Mouse wheel` | Scroll logs 1 line at a time (requires `/mouse on`) |
+| `Mouse wheel` | Scroll logs 1 line at a time (enabled by default) |
 | `Shift+Up` / `Shift+Down` | Scroll logs 1 line at a time |
 | `PageUp` / `PageDown` | Scroll logs 10 lines at a time |
 | `Tab` | Auto-complete |
@@ -251,7 +251,7 @@ Edit and press Enter. Format: space-separated `key=value` pairs.
 | `Ctrl+A` / `Ctrl+E` | Beginning / end of line |
 | `Esc` | Dismiss suggestions |
 
-**Text selection and copy:** works out of the box (mouse capture is off by default). To enable wheel-scroll use `/mouse on` — in that mode hold Option/Alt while dragging to select text (on macOS).
+**Mouse wheel scrolling** is enabled by default. To select/copy text, hold **Option/Alt** while dragging (on macOS) or **Shift** (on Linux). If you prefer native selection without modifiers, run `/mouse off`.
 
 Scrolling up auto-pauses the stream. Scrolling back down to the bottom resumes it. Status bar shows `SCROLL +N` with a `PageDown to resume` hint.
 

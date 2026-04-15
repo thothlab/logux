@@ -163,7 +163,7 @@ impl App {
 
             app_history: crate::config::load_app_history(),
 
-            mouse_capture: false,
+            mouse_capture: true,
 
             should_exit: false,
         }
@@ -346,9 +346,11 @@ pub async fn run() {
 
     terminal::enable_raw_mode().expect("Failed to enable raw mode");
     let mut stdout = io::stdout();
-    // Do NOT enable mouse capture by default — it blocks native text selection.
-    // Users can opt in with `/mouse on` to get wheel scroll.
-    execute!(stdout, EnterAlternateScreen).expect("Failed to enter alternate screen");
+    // Mouse capture ON by default — wheel scroll works out of the box.
+    // Trade-off: text selection needs Option/Alt (macOS) or Shift (Linux).
+    // Users can opt out with `/mouse off` to get native selection back.
+    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)
+        .expect("Failed to enter alternate screen");
     // Wipe both the alt screen and (where supported) the main-screen scrollback,
     // so previous shell output isn't visible when scrolling the terminal window.
     let _ = execute!(stdout, Clear(ClearType::All), Clear(ClearType::Purge));
@@ -368,6 +370,12 @@ pub async fn run() {
         app.push_system(format!("\x1b[1;36m{line}\x1b[0m"));
     }
     app.push_system("\x1b[2mType /help for commands, /exit to quit\x1b[0m".into());
+    app.push_system(
+        "\x1b[2mMouse wheel scrolls logs. To select/copy text: hold Option/Alt \
+         (macOS) or Shift (Linux) while dragging. Or `/mouse off` to disable \
+         capture.\x1b[0m"
+            .into(),
+    );
     app.push_system(String::new());
 
     let (ok, version) = app.adb.check_adb();
