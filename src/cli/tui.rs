@@ -399,15 +399,21 @@ pub async fn run() {
 
     // Channel for structured log entries
     let (log_tx, mut log_rx) = mpsc::unbounded_channel::<LogEntryData>();
+    // Channel for stream lifecycle events (started / ended / failed)
+    let (status_tx, mut status_rx) = mpsc::unbounded_channel::<StreamStatus>();
 
     // Main event loop
     loop {
         if app.streaming && !app.is_stream_running() {
-            start_log_stream(&mut app, log_tx.clone());
+            start_log_stream(&mut app, log_tx.clone(), status_tx.clone());
         }
 
         while let Ok(entry) = log_rx.try_recv() {
             app.push_entry(entry);
+        }
+
+        while let Ok(status) = status_rx.try_recv() {
+            handle_stream_status(&mut app, status);
         }
 
         let _ = terminal.draw(|frame| render_ui(frame, &app));
@@ -490,7 +496,47 @@ fn startup_devices(app: &mut App) {
 // Log streaming
 // ---------------------------------------------------------------------------
 
-fn start_log_stream(app: &mut App, tx: mpsc::UnboundedSender<LogEntryData>) {
+/// Surface stream lifecycle events to the user.
+/// Auto-restart is intentionally NOT done here — we want the user to see why
+/// the stream ended and decide whether to reconnect.
+fn handle_stream_status(app: &mut App, status: StreamStatus) {
+    match status {
+        StreamStatus::StoppedByUser => {
+            // Silent — user already knows (e.g. /stop, /app switch).
+        }
+        StreamStatus::LogcatExited => {
+            app.streaming = false;
+            app.stop_stream();
+            app.push_system(
+                "\x1b[33m⚠ Log stream ended: adb logcat exited. \
+                 Device may have disconnected or `adb` was killed. \
+                 Try /devices or reconnect, then /app <package> to resume.\x1b[0m"
+                    .into(),
+            );
+        }
+        StreamStatus::IoError(msg) => {
+            app.streaming = false;
+            app.stop_stream();
+            app.push_system(format!(
+                "\x1b[31m⚠ Log stream I/O error: {msg}. \
+                 Check `adb` connection (usb cable, wifi, `adb devices`).\x1b[0m"
+            ));
+        }
+        StreamStatus::FailedToStart(msg) => {
+            app.streaming = false;
+            app.stop_stream();
+            app.push_system(format!(
+                "\x1b[31m⚠ Failed to start log stream: {msg}\x1b[0m"
+            ));
+        }
+    }
+}
+
+fn start_log_stream(
+    app: &mut App,
+    tx: mpsc::UnboundedSender<LogEntryData>,
+    status_tx: mpsc::UnboundedSender<StreamStatus>,
+) {
     app.stop_stream();
 
     let stop = Arc::new(AtomicBool::new(false));
@@ -498,11 +544,34 @@ fn start_log_stream(app: &mut App, tx: mpsc::UnboundedSender<LogEntryData>) {
 
     let save = app.save_path.clone();
 
-    if let Ok(child) = app.adb.start_logcat(false) {
-        tokio::spawn(async move {
-            stream_logs(child, stop, save, tx).await;
-        });
+    match app.adb.start_logcat(false) {
+        Ok(child) => {
+            let stop_for_task = stop.clone();
+            tokio::spawn(async move {
+                let reason = stream_logs(child, stop_for_task.clone(), save, tx).await;
+                // Mark stream as stopped so UI knows it's not running anymore.
+                stop_for_task.store(true, Ordering::Relaxed);
+                let _ = status_tx.send(reason);
+            });
+        }
+        Err(e) => {
+            let _ = status_tx.send(StreamStatus::FailedToStart(format!("{e}")));
+            stop.store(true, Ordering::Relaxed);
+        }
     }
+}
+
+/// Reason why the log stream ended (or failed to start).
+#[derive(Debug, Clone)]
+enum StreamStatus {
+    /// User-requested stop (/stop, reconnect). No message needed.
+    StoppedByUser,
+    /// `adb logcat` exited (stdout closed). Device likely disconnected.
+    LogcatExited,
+    /// I/O error while reading from adb.
+    IoError(String),
+    /// Could not spawn adb logcat.
+    FailedToStart(String),
 }
 
 async fn stream_logs(
@@ -510,10 +579,10 @@ async fn stream_logs(
     stop: Arc<AtomicBool>,
     save_path: Option<String>,
     tx: mpsc::UnboundedSender<LogEntryData>,
-) {
+) -> StreamStatus {
     let stdout = match child.stdout.take() {
         Some(out) => out,
-        None => return,
+        None => return StreamStatus::IoError("no stdout from adb logcat".into()),
     };
 
     let mut reader = BufReader::new(stdout).lines();
@@ -526,9 +595,9 @@ async fn stream_logs(
             .ok()
     });
 
-    loop {
+    let end_reason = loop {
         if stop.load(Ordering::Relaxed) {
-            break;
+            break StreamStatus::StoppedByUser;
         }
 
         let line_result = tokio::select! {
@@ -548,19 +617,21 @@ async fn stream_logs(
                         message: entry.message.clone(),
                     };
                     if tx.send(data).is_err() {
-                        break;
+                        // UI shut down — clean exit.
+                        break StreamStatus::StoppedByUser;
                     }
                     if let Some(ref mut f) = save_file {
                         let _ = writeln!(f, "{}", entry.raw);
                     }
                 }
             }
-            Ok(None) => break,
-            Err(_) => break,
+            Ok(None) => break StreamStatus::LogcatExited,
+            Err(e) => break StreamStatus::IoError(format!("{e}")),
         }
-    }
+    };
 
     let _ = child.kill().await;
+    end_reason
 }
 
 // ---------------------------------------------------------------------------
