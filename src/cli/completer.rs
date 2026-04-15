@@ -27,6 +27,9 @@ pub const COMMANDS: &[(&str, &str, &[&str])] = &[
     ("/traffic", "HTTP(S) proxy inspection", &["open", "close", "list", "inspect", "filter", "clear"]),
     ("/mock", "YAML-based mock response rules", &["load", "list", "enable", "disable", "reload"]),
     ("/mouse", "Toggle mouse capture (enables wheel scroll; blocks selection)", &["on", "off", "toggle"]),
+    ("/copy", "Copy last N log messages (no column padding) to clipboard", &[]),
+    ("/width", "Set column widths: /width tag=30 ts=25 …", &["show", "reset", "timestamp=", "level=", "tag=", "pid=", "tid="]),
+    ("/forget", "Clear all auto-saved filter presets and per-app filter memory", &[]),
 ];
 
 /// Description for a /filter subcommand.

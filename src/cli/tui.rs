@@ -17,7 +17,7 @@ use crossterm::event::{
     KeyModifiers, KeyboardEnhancementFlags, MouseEventKind, PopKeyboardEnhancementFlags,
     PushKeyboardEnhancementFlags,
 };
-use crossterm::terminal::{self, EnterAlternateScreen, LeaveAlternateScreen};
+use crossterm::terminal::{self, Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen};
 use crossterm::execute;
 use ratatui::prelude::*;
 use ratatui::widgets::*;
@@ -74,11 +74,11 @@ struct ColumnLayout {
 }
 
 fn compute_layout(cfg: &FormatConfig, total_w: u16) -> ColumnLayout {
-    let ts_w = if cfg.timestamp { 20 } else { 0 };
-    let level_w = if cfg.level { 4 } else { 0 };
-    let pid_w = if cfg.pid { 7 } else { 0 };
-    let tid_w = if cfg.tid { 7 } else { 0 };
-    let tag_w = if cfg.tag { 25 } else { 0 };
+    let ts_w = if cfg.timestamp { cfg.widths.timestamp as usize } else { 0 };
+    let level_w = if cfg.level { cfg.widths.level as usize } else { 0 };
+    let pid_w = if cfg.pid { cfg.widths.pid as usize } else { 0 };
+    let tid_w = if cfg.tid { cfg.widths.tid as usize } else { 0 };
+    let tag_w = if cfg.tag { cfg.widths.tag as usize } else { 0 };
     let prefix_w = ts_w + level_w + pid_w + tid_w + tag_w;
     let msg_w = (total_w as usize).saturating_sub(prefix_w).max(10);
     ColumnLayout {
@@ -321,6 +321,9 @@ pub async fn run() {
     // Do NOT enable mouse capture by default — it blocks native text selection.
     // Users can opt in with `/mouse on` to get wheel scroll.
     execute!(stdout, EnterAlternateScreen).expect("Failed to enter alternate screen");
+    // Wipe both the alt screen and (where supported) the main-screen scrollback,
+    // so previous shell output isn't visible when scrolling the terminal window.
+    let _ = execute!(stdout, Clear(ClearType::All), Clear(ClearType::Purge));
     // Request keyboard-enhancement protocol so Shift+Enter is distinguishable.
     // Silently no-ops on terminals that don't support it.
     let _ = execute!(
@@ -607,7 +610,10 @@ fn render_logs(frame: &mut Frame, app: &App, area: Rect) {
     while idx > 0 && visual_rev.len() < inner_h * 2 {
         idx -= 1;
         let entry_lines = match &app.log_lines[idx] {
-            LogLine::System(s) => vec![parse_ansi_line(s)],
+            LogLine::System(s) => s
+                .split('\n')
+                .flat_map(|ln| wrap_styled_line(parse_ansi_line(ln), inner.width as usize))
+                .collect::<Vec<Line<'static>>>(),
             LogLine::Entry(e) => render_entry(
                 e,
                 &layout,
@@ -918,8 +924,7 @@ fn render_status_bar(frame: &mut Frame, app: &App, area: Rect) {
 
 fn render_input(frame: &mut Frame, app: &App, area: Rect) {
     let block = Block::default()
-        .borders(Borders::ALL)
-        .border_type(BorderType::Rounded)
+        .borders(Borders::TOP | Borders::BOTTOM)
         .border_style(Style::default().fg(Color::DarkGray));
     let inner = block.inner(area);
     frame.render_widget(block, area);
@@ -1170,6 +1175,44 @@ fn tag_style(tag: &str) -> Style {
 // ---------------------------------------------------------------------------
 // ANSI parser (for system messages only)
 // ---------------------------------------------------------------------------
+
+/// Wrap a styled Line to a given visible width, preserving span styles
+/// across wrap boundaries.
+fn wrap_styled_line(line: Line<'static>, width: usize) -> Vec<Line<'static>> {
+    if width == 0 {
+        return vec![line];
+    }
+    let mut rows: Vec<Vec<Span<'static>>> = vec![vec![]];
+    let mut col = 0usize;
+
+    for span in line.spans {
+        let style = span.style;
+        let mut buf = String::new();
+        for ch in span.content.chars() {
+            if col >= width {
+                if !buf.is_empty() {
+                    rows.last_mut().unwrap().push(Span::styled(
+                        std::mem::take(&mut buf),
+                        style,
+                    ));
+                }
+                rows.push(Vec::new());
+                col = 0;
+            }
+            buf.push(ch);
+            col += 1;
+        }
+        if !buf.is_empty() {
+            rows.last_mut().unwrap().push(Span::styled(buf, style));
+        }
+    }
+
+    if rows.is_empty() || rows.last().map_or(false, |r| r.is_empty() && rows.len() == 1) {
+        // empty line — return a single blank line
+        return vec![Line::from("")];
+    }
+    rows.into_iter().map(Line::from).collect()
+}
 
 fn parse_ansi_line(s: &str) -> Line<'static> {
     let mut spans: Vec<Span<'static>> = Vec::new();
@@ -1607,6 +1650,96 @@ async fn handle_enter(app: &mut App) {
             "\x1b[32mMouse capture OFF — text selection works; use Shift+Up/Down or PageUp/Down to scroll\x1b[0m"
         };
         app.push_system(msg.to_string());
+        return;
+    }
+
+    // /copy [N] — copy message column of last N visible entries to system clipboard
+    if let Some(rest) = input.strip_prefix("/copy") {
+        let n: usize = rest.trim().parse().unwrap_or(50);
+        let msgs: Vec<String> = app
+            .log_lines
+            .iter()
+            .rev()
+            .filter_map(|ln| match ln {
+                LogLine::Entry(e) => Some(e.message.clone()),
+                LogLine::System(_) => None,
+            })
+            .take(n)
+            .collect();
+        let text = msgs.into_iter().rev().collect::<Vec<_>>().join("\n");
+        if text.is_empty() {
+            app.push_system("\x1b[33m/copy: no log entries to copy\x1b[0m".to_string());
+            return;
+        }
+        match arboard::Clipboard::new().and_then(|mut cb| cb.set_text(text.clone())) {
+            Ok(()) => app.push_system(format!(
+                "\x1b[32m/copy: {} lines copied to clipboard\x1b[0m",
+                text.lines().count()
+            )),
+            Err(e) => app.push_system(format!("\x1b[31m/copy: {e}\x1b[0m")),
+        }
+        return;
+    }
+
+    // /width <col>=<n> [<col>=<n> ...] | show | reset
+    if let Some(rest) = input.strip_prefix("/width") {
+        let arg = rest.trim();
+        if arg.is_empty() || arg == "show" {
+            let w = &app.formatter.config.widths;
+            app.push_system(format!(
+                "\x1b[36mWidths: timestamp={} level={} tag={} pid={} tid={}  (message: remaining)\x1b[0m",
+                w.timestamp, w.level, w.tag, w.pid, w.tid
+            ));
+            return;
+        }
+        if arg == "reset" {
+            app.formatter.config.widths = crate::logs::formatter::ColumnWidths::default();
+            app.push_system("\x1b[32mColumn widths reset to defaults\x1b[0m".to_string());
+            return;
+        }
+        let mut changed = false;
+        for tok in arg.split_whitespace() {
+            if let Some((k, v)) = tok.split_once('=') {
+                if let Ok(n) = v.parse::<u16>() {
+                    let n = n.clamp(1, 200);
+                    let w = &mut app.formatter.config.widths;
+                    match k {
+                        "timestamp" | "ts" | "time" => w.timestamp = n,
+                        "level" | "lvl" => w.level = n,
+                        "tag" => w.tag = n,
+                        "pid" => w.pid = n,
+                        "tid" => w.tid = n,
+                        _ => {
+                            app.push_system(format!(
+                                "\x1b[31mUnknown column: {k} (use timestamp|level|tag|pid|tid)\x1b[0m"
+                            ));
+                            return;
+                        }
+                    }
+                    changed = true;
+                }
+            }
+        }
+        if changed {
+            let w = &app.formatter.config.widths;
+            app.push_system(format!(
+                "\x1b[32mWidths set: timestamp={} level={} tag={} pid={} tid={}\x1b[0m",
+                w.timestamp, w.level, w.tag, w.pid, w.tid
+            ));
+        } else {
+            app.push_system(
+                "\x1b[31mUsage: /width <col>=<n> ... | show | reset\x1b[0m".to_string(),
+            );
+        }
+        return;
+    }
+
+    // /forget — clear all auto-saved filter history (presets + per-app + history)
+    if input.trim() == "/forget" {
+        let (p, a, h) = crate::config::clear_saved_filters();
+        app.push_system(format!(
+            "\x1b[32mCleared: {p} filter presets, {a} per-app states, {h} history entries\x1b[0m"
+        ));
         return;
     }
 

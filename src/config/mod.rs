@@ -241,6 +241,30 @@ pub fn load_app_filters(package: &str) -> Option<String> {
     map.get(package).cloned().filter(|s| !s.trim().is_empty())
 }
 
+/// Wipe all auto-saved filter presets, per-app filter state and filter history.
+/// Returns a report (presets_deleted, app_entries_deleted, history_entries_deleted).
+pub fn clear_saved_filters() -> (usize, usize, usize) {
+    let presets = list_filter_presets().len();
+    let _ = fs::remove_file(filter_presets_file());
+
+    let app_map: std::collections::HashMap<String, String> = fs::read_to_string(app_filters_file())
+        .ok()
+        .and_then(|c| serde_json::from_str(&c).ok())
+        .unwrap_or_default();
+    let app_count = app_map.len();
+    let _ = fs::remove_file(app_filters_file());
+
+    let hist_map: std::collections::HashMap<String, Vec<String>> =
+        fs::read_to_string(filter_history_file())
+            .ok()
+            .and_then(|c| serde_json::from_str(&c).ok())
+            .unwrap_or_default();
+    let hist_count: usize = hist_map.values().map(|v| v.len()).sum();
+    let _ = fs::remove_file(filter_history_file());
+
+    (presets, app_count, hist_count)
+}
+
 pub fn save_filter_to_history(app_package: &str, preset_name: &str) {
     let path = filter_history_file();
     let mut map: std::collections::HashMap<String, Vec<String>> = if let Ok(content) = fs::read_to_string(&path) {

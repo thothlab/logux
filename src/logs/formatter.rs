@@ -53,6 +53,27 @@ fn tag_color(tag: &str) -> &'static str {
 const STACKTRACE_MARKERS: &[&str] = &["at ", "Caused by:", "java.", "kotlin.", "android."];
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ColumnWidths {
+    pub timestamp: u16,
+    pub level: u16,
+    pub pid: u16,
+    pub tid: u16,
+    pub tag: u16,
+}
+
+impl Default for ColumnWidths {
+    fn default() -> Self {
+        Self {
+            timestamp: 20,
+            level: 4,
+            pid: 7,
+            tid: 7,
+            tag: 25,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FormatConfig {
     pub timestamp: bool,
     pub level: bool,
@@ -61,6 +82,8 @@ pub struct FormatConfig {
     pub tid: bool,
     pub message: bool,
     pub preset: Preset,
+    #[serde(default)]
+    pub widths: ColumnWidths,
 }
 
 impl Default for FormatConfig {
@@ -73,6 +96,7 @@ impl Default for FormatConfig {
             tid: false,
             message: true,
             preset: Preset::Compact,
+            widths: ColumnWidths::default(),
         }
     }
 }
