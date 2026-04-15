@@ -80,14 +80,18 @@ logux
 
 ```
 ┌──────────────────────────────────────────────────────┐
-│ 04-13 12:34:56  D  MyTag          Short message      │ ← logs with columns
-│ 04-13 12:34:57  W  NetworkManager This is a long     │
-│                                    message that wraps │ ← wrap inside column
-│ ...                                                   │
+│                                                      │ ← blank separator
+│ 04-13 12:34:56  D  MyTag                             │ ← metadata on first line
+│     Short message                                    │ ← message indented 4 spaces
+│                                                      │
+│ 04-13 12:34:57  W  NetworkManager                    │
+│     This is a long message that wraps across         │ ← wraps full width
+│     multiple lines keeping indentation               │
+│ ...                                                  │
 ├──────────────────────────────────────────────────────┤
 │  device_name   com.pkg   STREAMING         120 lines │ ← status bar
 ├──────────────────────────────────────────────────────┤
-│ logux > /app mts_                                     │ ← input (always visible)
+│ logux > /app mts_                                    │ ← input (always visible)
 └──────────────────────────────────────────────────────┘
 ```
 
@@ -198,7 +202,7 @@ Edit and press Enter. Format: space-separated `key=value` pairs.
 | `/stop` | Stop the log stream completely |
 | `/pause` | Toggle pause (logs captured but hidden) |
 | `/resume` | Resume after pause |
-| `/save <file>` | Save matching logs to file |
+| `/save <file>` | Save matching logs to file (supports `~/`, empty arg stops saving) |
 
 ### Presets
 
