@@ -282,7 +282,9 @@ impl App {
         );
         self.suggestions = suggestions;
         self.show_suggestions = !self.suggestions.is_empty();
-        self.suggestion_idx = None;
+        // Auto-highlight the first match so `/q` + Enter executes the top
+        // suggestion without an intermediate Tab.
+        self.suggestion_idx = if self.suggestions.is_empty() { None } else { Some(0) };
     }
 
     fn apply_suggestion(&mut self) {
@@ -1573,9 +1575,18 @@ async fn handle_key_event(key: KeyEvent, app: &mut App) {
 }
 
 async fn handle_enter(app: &mut App) {
-    if app.show_suggestions && app.suggestion_idx.is_some() {
-        app.apply_suggestion();
-        return;
+    // If a suggestion is highlighted, replace the input with its canonical
+    // text and fall through to submit. This lets `/q` + Enter fire `/exit`.
+    if app.show_suggestions {
+        if let Some(idx) = app.suggestion_idx {
+            if let Some(s) = app.suggestions.get(idx) {
+                app.input = s.text.clone();
+                app.cursor_pos = app.input.len();
+            }
+        }
+        app.show_suggestions = false;
+        app.suggestions.clear();
+        app.suggestion_idx = None;
     }
 
     // Flatten multi-line input — Shift+Enter inserts `\n` purely for readability.
