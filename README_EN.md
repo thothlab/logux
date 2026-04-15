@@ -130,6 +130,7 @@ logux
 | `/filter set <expr>` | Set filters in one line |
 | `/filter reset` | Clear all filters |
 | `/filter <preset>` | Load a saved preset |
+| `/forget` | Wipe all auto-saved filter presets and per-app filter history |
 
 #### How Filters Work
 
@@ -186,6 +187,9 @@ Edit and press Enter. Format: space-separated `key=value` pairs.
 |---------|-------------|
 | `/format <preset>` | compact / threadtime / verbose / minimal / json |
 | `/fields +field -field` | Toggle fields: timestamp, level, tag, pid, tid |
+| `/width <col>=<n> …` | Resize columns: timestamp, level, tag, pid, tid |
+| `/width show` / `/width reset` | Show / reset column widths |
+| `/copy [N]` | Copy last N message texts (default 50) to clipboard, no column padding |
 
 ### Control
 

@@ -130,6 +130,7 @@ logux
 | `/filter set <expr>` | Задать фильтры одной строкой |
 | `/filter reset` | Сбросить все фильтры |
 | `/filter <preset>` | Загрузить сохранённый пресет |
+| `/forget` | Очистить все автосохранённые фильтры и историю по приложениям |
 
 #### Как работают фильтры
 
@@ -186,6 +187,9 @@ logux > /filter set app=ru.lewis.dbo tag=network level=W !tag=System.out,Instana
 |---------|----------|
 | `/format <preset>` | compact / threadtime / verbose / minimal / json |
 | `/fields +field -field` | Включить/выключить поля: timestamp, level, tag, pid, tid |
+| `/width <col>=<n> …` | Изменить ширину колонок: timestamp, level, tag, pid, tid |
+| `/width show` / `/width reset` | Показать / сбросить ширины |
+| `/copy [N]` | Скопировать в буфер последние N сообщений (по умолч. 50), только текст, без пробелов-колонок |
 
 ### Управление
 
