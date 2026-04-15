@@ -579,29 +579,7 @@ fn render_logs(frame: &mut Frame, app: &App, area: Rect) {
         return;
     }
 
-    // Scroll indicator block
-    let block = if app.scroll_offset > 0 {
-        Block::default().title(
-            Line::from(format!(" SCROLL +{} ", app.scroll_offset))
-                .right_aligned()
-                .style(
-                    Style::default()
-                        .fg(Color::Yellow)
-                        .add_modifier(Modifier::DIM),
-                ),
-        )
-    } else {
-        Block::default()
-    };
-    let inner = block.inner(area);
-    frame.render_widget(block, area);
-
-    let inner_h = inner.height as usize;
-    if inner_h == 0 {
-        return;
-    }
-
-    let layout = compute_layout(&app.formatter.config, inner.width);
+    let layout = compute_layout(&app.formatter.config, area.width);
     let total = app.log_lines.len();
     let end = total.saturating_sub(app.scroll_offset);
 
@@ -609,12 +587,12 @@ fn render_logs(frame: &mut Frame, app: &App, area: Rect) {
     let mut visual_rev: Vec<Line<'static>> = Vec::new();
     let mut idx = end;
 
-    while idx > 0 && visual_rev.len() < inner_h * 2 {
+    while idx > 0 && visual_rev.len() < height * 2 {
         idx -= 1;
         let entry_lines = match &app.log_lines[idx] {
             LogLine::System(s) => s
                 .split('\n')
-                .flat_map(|ln| wrap_styled_line(parse_ansi_line(ln), inner.width as usize))
+                .flat_map(|ln| wrap_styled_line(parse_ansi_line(ln), area.width as usize))
                 .collect::<Vec<Line<'static>>>(),
             LogLine::Entry(e) => render_entry(
                 e,
@@ -630,17 +608,17 @@ fn render_logs(frame: &mut Frame, app: &App, area: Rect) {
 
     visual_rev.reverse();
 
-    // Take last inner_h lines
-    let start = visual_rev.len().saturating_sub(inner_h);
+    // Take last `height` lines
+    let start = visual_rev.len().saturating_sub(height);
     let visible = &visual_rev[start..];
 
     // Pad empty lines at top
-    let pad = inner_h.saturating_sub(visible.len());
+    let pad = height.saturating_sub(visible.len());
     let mut display: Vec<Line> = vec![Line::from(""); pad];
     display.extend(visible.iter().cloned());
 
     let paragraph = Paragraph::new(Text::from(display));
-    frame.render_widget(paragraph, inner);
+    frame.render_widget(paragraph, area);
 }
 
 /// Render one log entry as 1+ visual lines (first line has columns, rest are indented continuation).
@@ -875,12 +853,16 @@ fn render_status_bar(frame: &mut Frame, app: &App, area: Rect) {
         parts.push(Span::raw(" "));
     }
 
-    if app.paused && !app.auto_scroll {
+    // Show scroll indicator in status bar
+    if app.scroll_offset > 0 {
         parts.push(Span::styled(
             format!(" SCROLL +{} ", app.scroll_offset),
             Style::default().fg(Color::White).bg(Color::Yellow),
         ));
         parts.push(Span::raw(" "));
+    }
+
+    if app.paused && !app.auto_scroll {
         parts.push(Span::styled(
             " PageDown to resume ",
             Style::default().fg(Color::Gray).add_modifier(Modifier::DIM),
