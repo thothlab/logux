@@ -621,7 +621,7 @@ fn render_logs(frame: &mut Frame, app: &App, area: Rect) {
     frame.render_widget(paragraph, area);
 }
 
-/// Render one log entry as 1+ visual lines (first line has columns, rest are indented continuation).
+/// Render one log entry as 1+ visual lines (first line: metadata, rest: message indented).
 fn render_entry<'a>(
     entry: &LogEntryData,
     layout: &ColumnLayout,
@@ -642,8 +642,8 @@ fn render_entry<'a>(
         return vec![Line::from(Span::raw(json))];
     }
 
-    // Build prefix spans (all columns except message)
-    let mut prefix: Vec<Span<'a>> = Vec::new();
+    // Build metadata line (timestamp, level, tag, pid, tid — without message)
+    let mut metadata: Vec<Span<'a>> = Vec::new();
 
     if cfg.timestamp && layout.ts_w > 0 {
         let w = layout.ts_w - 1;
@@ -652,30 +652,30 @@ fn render_entry<'a>(
         } else {
             format!("{:<w$}", entry.timestamp)
         };
-        prefix.push(Span::styled(
+        metadata.push(Span::styled(
             ts,
             Style::default().fg(Color::Gray),
         ));
-        prefix.push(Span::raw(" "));
+        metadata.push(Span::raw(" "));
     }
 
     if cfg.level && layout.level_w > 0 {
         let ch = entry.level.char();
-        prefix.push(Span::styled(
+        metadata.push(Span::styled(
             format!(" {ch} "),
             level_style(entry.level),
         ));
     }
 
     if cfg.pid && layout.pid_w > 0 {
-        prefix.push(Span::styled(
+        metadata.push(Span::styled(
             format!("{:>5}  ", entry.pid),
             Style::default().add_modifier(Modifier::DIM),
         ));
     }
 
     if cfg.tid && layout.tid_w > 0 {
-        prefix.push(Span::styled(
+        metadata.push(Span::styled(
             format!("{:<5}  ", entry.tid),
             Style::default().add_modifier(Modifier::DIM),
         ));
@@ -687,53 +687,54 @@ fn render_entry<'a>(
         } else {
             &entry.tag
         };
-        prefix.push(Span::styled(
-            format!("{:<24} ", tag_display),
+        metadata.push(Span::styled(
+            format!("{:<24}", tag_display),
             tag_style(&entry.tag),
         ));
     }
 
-    // Determine message style
-    let is_stack = STACKTRACE_MARKERS
-        .iter()
-        .any(|m| entry.message.trim_start().starts_with(m));
-    let msg_style = if is_stack {
-        Style::default()
-            .fg(Color::Red)
-            .add_modifier(Modifier::DIM | Modifier::ITALIC)
-    } else {
-        level_style(entry.level)
-    };
+    let mut lines: Vec<Line<'a>> = Vec::new();
 
-    // Wrap message text
-    let msg_lines = wrap_text(&entry.message, layout.msg_w);
+    // First line: metadata only
+    lines.push(Line::from(metadata));
 
-    let padding_str: String = " ".repeat(layout.prefix_w);
-    let mut lines: Vec<Line<'a>> = Vec::with_capacity(msg_lines.len());
-
-    for (i, chunk) in msg_lines.iter().enumerate() {
-        let msg_spans = if !highlight.is_empty() && !is_stack {
-            highlight_spans(chunk, highlight, msg_style)
+    // Message on separate line(s) with indentation
+    if !entry.message.is_empty() {
+        let is_stack = STACKTRACE_MARKERS
+            .iter()
+            .any(|m| entry.message.trim_start().starts_with(m));
+        let msg_style = if is_stack {
+            Style::default()
+                .fg(Color::Red)
+                .add_modifier(Modifier::DIM | Modifier::ITALIC)
         } else {
-            vec![Span::styled(chunk.clone(), msg_style)]
+            level_style(entry.level)
         };
 
-        if i == 0 {
-            let mut spans = prefix.clone();
-            spans.extend(msg_spans);
-            lines.push(Line::from(spans));
-        } else {
-            let mut spans = vec![Span::styled(
-                padding_str.clone(),
-                Style::default(),
-            )];
-            spans.extend(msg_spans);
-            lines.push(Line::from(spans));
-        }
-    }
+        // Use full width for message wrapping (no prefix width deduction)
+        let msg_w = (layout.prefix_w + layout.msg_w).max(20);
+        let msg_lines = wrap_text(&entry.message, msg_w);
 
-    if lines.is_empty() {
-        lines.push(Line::from(prefix));
+        // Message line prefix: "- " at the beginning
+        let msg_indent = "- ";
+
+        for (i, chunk) in msg_lines.iter().enumerate() {
+            let msg_spans = if !highlight.is_empty() && !is_stack {
+                highlight_spans(chunk, highlight, msg_style)
+            } else {
+                vec![Span::styled(chunk.clone(), msg_style)]
+            };
+
+            let mut line_spans: Vec<Span> = Vec::new();
+            if i == 0 {
+                line_spans.push(Span::styled(msg_indent, msg_style));
+            } else {
+                // Indent continuation lines to align with first message line
+                line_spans.push(Span::raw(" ".repeat(msg_indent.len())));
+            }
+            line_spans.extend(msg_spans);
+            lines.push(Line::from(line_spans));
+        }
     }
 
     lines
