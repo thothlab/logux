@@ -2,14 +2,14 @@
 
 [![ru](https://img.shields.io/badge/lang-Русский-green)](README.md)
 
-**Android Logs & Traffic CLI** -- a TUI tool for Android developers: real-time log viewing with columnar layout, filtering, traffic inspection, and network response mocking.
+**Android Logs & Traffic CLI** -- a TUI tool for Android developers: real-time log viewing with a two-line layout, filtering, traffic inspection, and network response mocking.
 
 ---
 
 ## Features
 
 - **Split-screen TUI** -- logs scroll on top, input line always visible at the bottom
-- **Columnar log output** -- timestamp, level, tag, message in fixed-width columns; long messages wrap within the message column
+- **Two-line log layout** -- header row with timestamp / level / pid / tid / tag columns, then the message on the next line(s) indented and using the full terminal width (long messages wrap automatically); empty separator line between entries
 - **ADB Logs** -- reads `adb logcat` with colored, formatted output
 - **Smart Filtering** -- by package, tag, level, PID, regex, text -- all changeable on the fly without restart
 - **Exclusion Filters** -- `/exclude tag` and `/exclude msg` to hide unwanted lines (LogRabbit-style "None of")
@@ -324,7 +324,7 @@ src/
  ├── main.rs              -- entry point (tokio async runtime)
  ├── adb/mod.rs           -- device management, logcat streaming
  ├── cli/
- │   ├── tui.rs            -- TUI: ratatui, event loop, columnar rendering
+ │   ├── tui.rs            -- TUI: ratatui, event loop, two-line rendering (header + message)
  │   ├── commands.rs       -- command handlers (buffered output)
  │   └── completer.rs      -- tab completion with package/preset history
  ├── logs/
@@ -340,7 +340,7 @@ src/
 
 | Tag | Language | Description |
 |-----|----------|-------------|
-| `v2.1.0` | Rust | TUI with columnar layout, resilient stream (UTF-8 lossy), auto-reconnect, `/reconnect` |
+| `v2.1.0` | Rust | TUI with two-line layout (header + message), resilient stream (UTF-8 lossy), auto-reconnect, `/reconnect` |
 | `v2.0.0` | Rust | First Rust version (rustyline REPL) |
 | `v1.0.0-python` | Python | Previous version (prompt_toolkit + rich + mitmproxy) |
 
