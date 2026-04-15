@@ -200,3 +200,37 @@ class ADBClient:
             return False, "adb not found in PATH"
         except subprocess.TimeoutExpired:
             return False, "adb command timed out"
+
+    # --- Server control (for /reconnect) ---
+
+    def kill_server(self) -> tuple[bool, str]:
+        try:
+            result = self._run("kill-server")
+            msg = (result.stdout + result.stderr).strip() or "adb server killed"
+            return result.returncode == 0, msg
+        except (FileNotFoundError, subprocess.TimeoutExpired) as e:
+            return False, f"adb kill-server failed: {e}"
+
+    def start_server(self) -> tuple[bool, str]:
+        try:
+            result = self._run("start-server")
+            msg = (result.stdout + result.stderr).strip() or "adb server started"
+            return result.returncode == 0, msg
+        except (FileNotFoundError, subprocess.TimeoutExpired) as e:
+            return False, f"adb start-server failed: {e}"
+
+    def get_foreground_package(self) -> str | None:
+        """Return the currently focused app's package name, or None."""
+        serial = self._device_serial()
+        try:
+            result = self._run("shell", "dumpsys", "activity", "activities", device=serial)
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            return None
+        for line in result.stdout.splitlines():
+            if "mResumedActivity" in line or "topResumedActivity" in line:
+                for tok in line.split():
+                    if "/" in tok:
+                        pkg = tok.split("/", 1)[0]
+                        if "." in pkg:
+                            return pkg
+        return None

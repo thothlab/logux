@@ -16,7 +16,7 @@ from rich.text import Text
 from pathlib import Path
 
 from ..adb.client import ADBClient
-from ..logs.stream import LogStream
+from ..logs.stream import LogStream, StreamStatus
 from ..traffic.proxy import TrafficProxy
 from ..mock.rules import MockEngine
 from .completer import LoguxCompleter
@@ -26,7 +26,7 @@ from .commands import dispatch
 BANNER = r"""
  ╦  ╔═╗╔═╗╦ ╦═╗ ╦
  ║  ║ ║║ ╦║ ║╔╩╦╝
- ╩═╝╚═╝╚═╝╚═╝╩ ╚═  v1.0
+ ╩═╝╚═╝╚═╝╚═╝╩ ╚═  v2.0-python
 """
 
 PROMPT_STYLE = Style.from_dict({
@@ -41,7 +41,7 @@ class LoguxShell:
     def __init__(self) -> None:
         self.console = Console()
         self.adb = ADBClient()
-        self.log_stream = LogStream(self.adb, self.console)
+        self.log_stream = LogStream(self.adb, self.console, status_callback=self._on_stream_status)
         self.traffic = TrafficProxy(self.console)
         self.mock_engine = MockEngine(self.console)
         self._exit_requested = False
@@ -59,6 +59,19 @@ class LoguxShell:
 
     def request_exit(self) -> None:
         self._exit_requested = True
+
+    def _on_stream_status(self, status: StreamStatus, msg: str) -> None:
+        style_map = {
+            StreamStatus.STOPPED_BY_USER: "dim",
+            StreamStatus.LOGCAT_EXITED: "yellow",
+            StreamStatus.IO_ERROR: "red",
+            StreamStatus.RECONNECTING: "yellow",
+            StreamStatus.RECONNECTED: "green",
+            StreamStatus.GAVE_UP: "bold red",
+        }
+        style = style_map.get(status, "")
+        marker = "✓" if status == StreamStatus.RECONNECTED else "⚠"
+        self.console.print(f"\n[{style}]{marker} {msg}[/{style}]")
 
     def _build_prompt(self) -> list[tuple[str, str]]:
         parts: list[tuple[str, str]] = []
