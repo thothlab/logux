@@ -1752,6 +1752,78 @@ async fn handle_enter(app: &mut App) {
         return;
     }
 
+    // /save <file> — dump filtered buffer now + keep appending new matching entries
+    if let Some(rest) = input.strip_prefix("/save") {
+        let arg = rest.trim();
+        if arg.is_empty() {
+            app.save_path = None;
+            app.push_system("\x1b[33mSave stopped\x1b[0m".to_string());
+            return;
+        }
+
+        let expanded: String = if let Some(tail) = arg.strip_prefix("~/") {
+            match std::env::var("HOME") {
+                Ok(home) => format!("{home}/{tail}"),
+                Err(_) => arg.to_string(),
+            }
+        } else if arg == "~" {
+            std::env::var("HOME").unwrap_or_else(|_| arg.to_string())
+        } else {
+            arg.to_string()
+        };
+
+        let path = std::path::Path::new(&expanded);
+        if let Some(parent) = path.parent() {
+            if !parent.as_os_str().is_empty() && !parent.exists() {
+                app.push_system(format!(
+                    "\x1b[31mSave failed: directory does not exist: {}\x1b[0m",
+                    parent.display()
+                ));
+                return;
+            }
+        }
+
+        // Open in truncate mode so the file reflects the current filtered buffer.
+        let file_result = std::fs::OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(true)
+            .open(&expanded);
+
+        match file_result {
+            Ok(mut file) => {
+                use std::io::Write;
+                let mut count = 0usize;
+                for line in &app.log_lines {
+                    if let LogLine::Entry(e) = line {
+                        let row = format!(
+                            "{} {} {}/{} {}: {}\n",
+                            e.timestamp,
+                            e.level.char(),
+                            e.pid,
+                            e.tid,
+                            e.tag,
+                            e.message
+                        );
+                        if file.write_all(row.as_bytes()).is_ok() {
+                            count += 1;
+                        }
+                    }
+                }
+                app.save_path = Some(expanded.clone());
+                app.push_system(format!(
+                    "\x1b[32mSaved {count} entries to {expanded}. New matching entries will be appended.\x1b[0m"
+                ));
+            }
+            Err(e) => {
+                app.push_system(format!(
+                    "\x1b[31mSave failed: {expanded}: {e}\x1b[0m"
+                ));
+            }
+        }
+        return;
+    }
+
     // /forget — clear all auto-saved filter history (presets + per-app + history)
     if input.trim() == "/forget" {
         let (p, a, h) = crate::config::clear_saved_filters();
