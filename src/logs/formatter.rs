@@ -1,10 +1,11 @@
-//! Log formatter — colored output with configurable fields and presets.
+//! Field/preset configuration for log output.
+//!
+//! The actual rendering of log entries lives in `cli::tui::render_entry`
+//! (two-line layout: header row + indented message). This module only
+//! holds the shared `FormatConfig` that controls which fields are shown
+//! and their widths.
 
 use serde::{Deserialize, Serialize};
-use std::collections::hash_map::DefaultHasher;
-use std::hash::{Hash, Hasher};
-
-use super::parser::LogEntry;
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -38,19 +39,6 @@ impl Preset {
         }
     }
 }
-
-const TAG_COLORS: &[&str] = &[
-    "36", "35", "94", "92", "93", "95", "96", "34", "91", "33",
-];
-
-fn tag_color(tag: &str) -> &'static str {
-    let mut hasher = DefaultHasher::new();
-    tag.hash(&mut hasher);
-    let idx = (hasher.finish() as usize) % TAG_COLORS.len();
-    TAG_COLORS[idx]
-}
-
-const STACKTRACE_MARKERS: &[&str] = &["at ", "Caused by:", "java.", "kotlin.", "android."];
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ColumnWidths {
@@ -161,148 +149,9 @@ impl Default for LogFormatter {
     }
 }
 
-impl LogFormatter {
-    pub fn format_entry(&self, entry: &LogEntry) -> String {
-        if self.config.preset == Preset::Json {
-            return self.format_json(entry);
-        }
-        self.format_colored(entry)
-    }
-
-    fn format_colored(&self, entry: &LogEntry) -> String {
-        let mut out = String::with_capacity(256);
-        let level_color = entry.level.color_code();
-
-        // Timestamp
-        if self.config.timestamp && !entry.timestamp.is_empty() {
-            out.push_str(&format!("\x1b[2;36m{}\x1b[0m ", entry.timestamp));
-        }
-
-        // Level
-        if self.config.level {
-            out.push_str(&format!("\x1b[{level_color}m {} \x1b[0m ", entry.level.char()));
-        }
-
-        // PID/TID
-        if self.config.pid && entry.pid > 0 {
-            out.push_str(&format!("\x1b[2m{:>5}", entry.pid));
-            if self.config.tid && entry.tid > 0 {
-                out.push_str(&format!("/{:<5}", entry.tid));
-            }
-            out.push_str("\x1b[0m ");
-        } else if self.config.tid && entry.tid > 0 {
-            out.push_str(&format!("\x1b[2m{:>5}\x1b[0m ", entry.tid));
-        }
-
-        // Tag
-        if self.config.tag && !entry.tag.is_empty() {
-            let color = tag_color(&entry.tag);
-            let tag_display = if entry.tag.len() > 24 {
-                &entry.tag[..24]
-            } else {
-                &entry.tag
-            };
-            out.push_str(&format!("\x1b[{color}m{tag_display:<24}\x1b[0m "));
-        }
-
-        // Message
-        if self.config.message {
-            let msg = &entry.message;
-            let is_stacktrace = STACKTRACE_MARKERS
-                .iter()
-                .any(|m| msg.trim_start().starts_with(m));
-
-            if is_stacktrace {
-                out.push_str(&format!("\x1b[2;3;31m{msg}\x1b[0m"));
-            } else if !self.highlight_text.is_empty() {
-                out.push_str(&highlight_in_message(msg, &self.highlight_text, level_color));
-            } else {
-                out.push_str(&format!("\x1b[{level_color}m{msg}\x1b[0m"));
-            }
-        }
-
-        out
-    }
-
-    fn format_json(&self, entry: &LogEntry) -> String {
-        serde_json::json!({
-            "timestamp": entry.timestamp,
-            "level": entry.level.char().to_string(),
-            "pid": entry.pid,
-            "tid": entry.tid,
-            "tag": entry.tag,
-            "message": entry.message,
-        })
-        .to_string()
-    }
-}
-
-fn highlight_in_message(msg: &str, needle: &str, base_color: &str) -> String {
-    let lower_msg = msg.to_lowercase();
-    let lower_needle = needle.to_lowercase();
-    let mut result = String::new();
-    let mut pos = 0;
-
-    while let Some(idx) = lower_msg[pos..].find(&lower_needle) {
-        let abs_idx = pos + idx;
-        result.push_str(&format!(
-            "\x1b[{base_color}m{}\x1b[0m",
-            &msg[pos..abs_idx]
-        ));
-        result.push_str(&format!(
-            "\x1b[1;30;43m{}\x1b[0m",
-            &msg[abs_idx..abs_idx + needle.len()]
-        ));
-        pos = abs_idx + needle.len();
-    }
-    if pos < msg.len() {
-        result.push_str(&format!("\x1b[{base_color}m{}\x1b[0m", &msg[pos..]));
-    }
-    result
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::logs::parser::LogLevel;
-
-    fn make_entry() -> LogEntry {
-        LogEntry {
-            timestamp: "04-13 12:00:00.000".to_string(),
-            pid: 100,
-            tid: 200,
-            level: LogLevel::Info,
-            tag: "TestTag".to_string(),
-            message: "Hello World".to_string(),
-            raw: String::new(),
-        }
-    }
-
-    #[test]
-    fn test_json_format() {
-        let mut fmt = LogFormatter::default();
-        fmt.config.apply_preset(Preset::Json);
-        let out = fmt.format_entry(&make_entry());
-        assert!(out.contains("\"tag\":\"TestTag\""));
-        assert!(out.contains("\"message\":\"Hello World\""));
-    }
-
-    #[test]
-    fn test_compact_has_tag_and_message() {
-        let fmt = LogFormatter::default();
-        let out = fmt.format_entry(&make_entry());
-        assert!(out.contains("TestTag"));
-        assert!(out.contains("Hello World"));
-    }
-
-    #[test]
-    fn test_minimal_no_timestamp() {
-        let mut fmt = LogFormatter::default();
-        fmt.config.apply_preset(Preset::Minimal);
-        let out = fmt.format_entry(&make_entry());
-        assert!(!out.contains("12:00:00"));
-        assert!(out.contains("Hello World"));
-    }
 
     #[test]
     fn test_toggle_field() {

@@ -136,6 +136,7 @@ impl MockEngine {
         }
     }
 
+    #[allow(dead_code)] // TODO: wire up to traffic proxy when mock feature lands
     pub fn check_hot_reload(&mut self) -> bool {
         let Some(ref path) = self.yaml_path else { return false };
         if !path.exists() { return false; }
@@ -171,12 +172,14 @@ impl MockEngine {
         }
     }
 
+    #[allow(dead_code)] // TODO: wire up to traffic proxy when mock feature lands
     pub fn get_rule(&self, id: &str) -> Option<&MockRule> {
         self.rules.iter().find(|r| r.id == id)
     }
 
     /// Match a request (method, path, host, query_params) against rules.
     /// Returns the response body and status if matched.
+    #[allow(dead_code)] // TODO: wire up to traffic proxy when mock feature lands
     pub fn match_request(&mut self, method: &str, path: &str, host: &str) -> Option<(u16, String)> {
         for rule in &mut self.rules {
             if !rule.enabled {

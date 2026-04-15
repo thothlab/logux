@@ -77,6 +77,7 @@ impl Default for TrafficState {
 }
 
 impl TrafficState {
+    #[allow(dead_code)] // TODO: wire up to mitmproxy bridge when traffic feature lands
     pub fn add_request(&mut self, method: &str, url: &str, host: &str, path: &str, headers: HashMap<String, String>, body: Vec<u8>) -> usize {
         self.counter += 1;
         let id = self.counter;
@@ -96,6 +97,7 @@ impl TrafficState {
         id
     }
 
+    #[allow(dead_code)] // TODO: wire up to mitmproxy bridge when traffic feature lands
     pub fn set_response(&mut self, id: usize, status: u16, headers: HashMap<String, String>, body: Vec<u8>) {
         if let Some(entry) = self.entries.iter_mut().find(|e| e.id == id) {
             entry.status = Some(status);

@@ -52,11 +52,6 @@ impl FilterState {
         self.package_tracking = !package.is_empty();
     }
 
-    pub fn update_pid(&mut self, pid: u32) {
-        self.pids.clear();
-        self.pids.insert(pid);
-    }
-
     pub fn add_tag(&mut self, tag: &str) {
         self.tags.insert(tag.to_string());
     }
@@ -98,12 +93,6 @@ impl FilterState {
         self.min_level = LogLevel::Verbose;
     }
 
-    pub fn clear_app(&mut self) {
-        self.package.clear();
-        self.pids.clear();
-        self.package_tracking = false;
-    }
-
     pub fn set_level(&mut self, level: LogLevel) {
         self.min_level = level;
     }
@@ -122,10 +111,6 @@ impl FilterState {
         self.package_tracking = false;
         self.pids.clear();
         self.pids.insert(pid);
-    }
-
-    pub fn set_threads(&mut self, tids: HashSet<u32>) {
-        self.threads = tids;
     }
 
     pub fn description(&self) -> String {
@@ -450,9 +435,6 @@ mod tests {
         assert!(matches(&make_entry(100, 1, LogLevel::Debug, "T", "m"), &state));
         assert!(!matches(&make_entry(200, 1, LogLevel::Debug, "T", "m"), &state));
 
-        state.update_pid(300);
-        assert!(matches(&make_entry(300, 1, LogLevel::Debug, "T", "m"), &state));
-        assert!(!matches(&make_entry(100, 1, LogLevel::Debug, "T", "m"), &state));
     }
 
     #[test]

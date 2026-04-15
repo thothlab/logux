@@ -54,17 +54,6 @@ impl LogLevel {
         }
     }
 
-    pub fn color_code(&self) -> &'static str {
-        match self {
-            Self::Verbose => "37",    // white dim
-            Self::Debug => "34",      // blue
-            Self::Info => "32",       // green
-            Self::Warn => "33",       // yellow
-            Self::Error => "31",      // red
-            Self::Fatal => "1;37;41", // bold white on red
-            Self::Silent => "2;37",   // dim
-        }
-    }
 }
 
 impl fmt::Display for LogLevel {

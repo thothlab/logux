@@ -43,7 +43,6 @@ pub struct Device {
     pub state: DeviceState,
     pub model: String,
     pub product: String,
-    pub transport_id: String,
 }
 
 impl Device {
@@ -129,15 +128,12 @@ impl AdbClient {
             let state = DeviceState::from_str(parts[1]);
             let mut model = String::new();
             let mut product = String::new();
-            let mut transport_id = String::new();
 
             for part in &parts[2..] {
                 if let Some(val) = part.strip_prefix("model:") {
                     model = val.to_string();
                 } else if let Some(val) = part.strip_prefix("product:") {
                     product = val.to_string();
-                } else if let Some(val) = part.strip_prefix("transport_id:") {
-                    transport_id = val.to_string();
                 }
             }
 
@@ -146,7 +142,6 @@ impl AdbClient {
                 state,
                 model,
                 product,
-                transport_id,
             });
         }
 
@@ -320,10 +315,6 @@ impl AdbClient {
             }
             Err(e) => (false, format!("adb not found: {e}")),
         }
-    }
-
-    pub fn get_devices(&self) -> &[Device] {
-        &self.devices
     }
 
     /// Get the package name of the currently foreground (resumed) activity.
