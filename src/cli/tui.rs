@@ -707,10 +707,10 @@ fn render_entry<'a>(
         let msg_w = (layout.prefix_w + layout.msg_w).max(20);
         let msg_lines = wrap_text(&entry.message, msg_w);
 
-        // Message line prefix: "- " at the beginning
-        let msg_indent = "- ";
+        // Indent every message line with 4 spaces (tab-like offset)
+        let msg_indent = "    ";
 
-        for (i, chunk) in msg_lines.iter().enumerate() {
+        for chunk in msg_lines.iter() {
             let msg_spans = if !highlight.is_empty() && !is_stack {
                 highlight_spans(chunk, highlight, msg_style)
             } else {
@@ -718,12 +718,7 @@ fn render_entry<'a>(
             };
 
             let mut line_spans: Vec<Span> = Vec::new();
-            if i == 0 {
-                line_spans.push(Span::styled(msg_indent, msg_style));
-            } else {
-                // Indent continuation lines to align with first message line
-                line_spans.push(Span::raw(" ".repeat(msg_indent.len())));
-            }
+            line_spans.push(Span::raw(msg_indent));
             line_spans.extend(msg_spans);
             lines.push(Line::from(line_spans));
         }
