@@ -26,7 +26,7 @@ use tokio::sync::mpsc;
 
 use crate::adb::AdbClient;
 use crate::logs::filters::{self, FilterState};
-use crate::logs::formatter::{FormatConfig, Preset};
+use crate::logs::formatter::{FormatConfig, LayoutMode, Preset};
 use crate::logs::parser::{LogLevel, parse_logcat_line};
 use crate::mock::MockEngine;
 use crate::traffic::TrafficProxy;
@@ -791,7 +791,10 @@ fn render_logs(frame: &mut Frame, app: &App, area: Rect) {
     frame.render_widget(paragraph, area);
 }
 
-/// Render one log entry as 1+ visual lines (first line: metadata, rest: message indented).
+/// Render one log entry as 1+ visual lines.
+///
+/// - `LayoutMode::Linear` (default): blank separator + metadata header line + indented message.
+/// - `LayoutMode::Compact`: single line with all fields in fixed-width columns, message truncated.
 fn render_entry<'a>(
     entry: &LogEntryData,
     layout: &ColumnLayout,
@@ -811,6 +814,72 @@ fn render_entry<'a>(
         );
         return vec![Line::from(Span::raw(json))];
     }
+
+    // -----------------------------------------------------------------------
+    // Compact mode: every entry on a single line, columns padded/truncated
+    // -----------------------------------------------------------------------
+    if cfg.layout_mode == LayoutMode::Compact {
+        let mut spans: Vec<Span<'a>> = Vec::new();
+
+        if cfg.timestamp && layout.ts_w > 0 {
+            let ts = truncate_to_width(&entry.timestamp, layout.ts_w);
+            spans.push(Span::styled(
+                format!("{ts:<width$}", width = layout.ts_w),
+                Style::default().fg(Color::Gray),
+            ));
+            spans.push(Span::raw("  "));
+        }
+
+        if cfg.level && layout.level_w > 0 {
+            let ch = entry.level.char();
+            spans.push(Span::styled(format!(" {ch} "), level_style(entry.level)));
+            spans.push(Span::raw(" "));
+        }
+
+        if cfg.pid && layout.pid_w > 0 {
+            let pid = truncate_to_width(&format!("{}", entry.pid), layout.pid_w);
+            spans.push(Span::styled(
+                format!("{pid:<width$}", width = layout.pid_w),
+                Style::default().add_modifier(Modifier::DIM),
+            ));
+            spans.push(Span::raw(" "));
+        }
+
+        if cfg.tid && layout.tid_w > 0 {
+            let tid = truncate_to_width(&format!("{}", entry.tid), layout.tid_w);
+            spans.push(Span::styled(
+                format!("{tid:<width$}", width = layout.tid_w),
+                Style::default().add_modifier(Modifier::DIM),
+            ));
+            spans.push(Span::raw(" "));
+        }
+
+        if cfg.tag && layout.tag_w > 0 {
+            let tag = truncate_to_width(&entry.tag, layout.tag_w);
+            spans.push(Span::styled(
+                format!("{tag:<width$}", width = layout.tag_w),
+                tag_style(&entry.tag),
+            ));
+            spans.push(Span::raw("  "));
+        }
+
+        if cfg.message && !entry.message.is_empty() {
+            let msg = truncate_to_width(&entry.message, layout.msg_w);
+            let msg_style = level_style(entry.level);
+            let msg_spans = if !highlight.is_empty() {
+                highlight_spans(&msg, highlight, msg_style)
+            } else {
+                vec![Span::styled(msg, msg_style)]
+            };
+            spans.extend(msg_spans);
+        }
+
+        return vec![Line::from(spans)];
+    }
+
+    // -----------------------------------------------------------------------
+    // Linear mode (default): blank line + metadata header + wrapped message
+    // -----------------------------------------------------------------------
 
     // Build metadata line (timestamp, level, tag, pid, tid — without message)
     let mut metadata: Vec<Span<'a>> = Vec::new();

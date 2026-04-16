@@ -20,6 +20,7 @@ pub const COMMANDS: &[(&str, &str, &[&str])] = &[
     ("/exclude", "Exclude tags or messages from output", &["tag", "msg", "show", "reset", "remove"]),
     ("/format", "Switch output format preset", &["compact", "threadtime", "verbose", "minimal", "json"]),
     ("/fields", "Toggle visible columns", &["+timestamp", "-timestamp", "+level", "-level", "+tag", "-tag", "+pid", "-pid", "+tid", "-tid"]),
+    ("/layout", "Switch display layout", &["linear", "compact"]),
     ("/stop", "Stop the log stream completely", &[]),
     ("/pause", "Pause or resume display (toggle)", &[]),
     ("/resume", "Resume display after pause", &[]),

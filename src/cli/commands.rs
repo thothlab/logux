@@ -3,7 +3,7 @@
 use crate::adb::AdbClient;
 use crate::config;
 use crate::logs::filters::FilterState;
-use crate::logs::formatter::{LogFormatter, Preset};
+use crate::logs::formatter::{LayoutMode, LogFormatter, Preset};
 use crate::logs::parser::LogLevel;
 use crate::mock::MockEngine;
 use crate::traffic::TrafficProxy;
@@ -45,6 +45,8 @@ pub async fn dispatch(ctx: &mut CommandContext<'_>, input: &str) {
         "/exclude" => cmd_exclude(ctx, args),
         "/format" => cmd_format(ctx, args),
         "/fields" => cmd_fields(ctx, args),
+        "/layout" => cmd_layout(ctx, args),
+        "/width" => cmd_width(ctx, args),
         "/stop" => cmd_stop(ctx),
         "/pause" => cmd_pause(ctx),
         "/resume" => cmd_resume(ctx),
@@ -86,6 +88,9 @@ fn cmd_help(ctx: &mut CommandContext) {
         ("--- Format ---", ""),
         ("/format <preset>", "compact|threadtime|verbose|minimal|json"),
         ("/fields +field -field", "Toggle: timestamp,level,tag,pid,tid"),
+        ("/layout linear|compact", "linear: 2-line view; compact: single-line columns"),
+        ("/width <col>=<n>", "Set column width (tag, timestamp, pid, tid, level)"),
+        ("/width show|reset", "Show or reset column widths"),
         ("", ""),
         ("--- Control ---", ""),
         ("/stop", "Stop log stream completely"),
@@ -519,6 +524,94 @@ fn cmd_fields(ctx: &mut CommandContext, args: &str) {
         } else {
             ctx.output.push(format!("\x1b[31mUnknown field: {name}\x1b[0m"));
         }
+    }
+}
+
+fn cmd_layout(ctx: &mut CommandContext, args: &str) {
+    if args.is_empty() {
+        ctx.output.push(format!(
+            "\x1b[36mCurrent layout: {}\x1b[0m",
+            ctx.formatter.config.layout_mode.as_str()
+        ));
+        ctx.output.push("\x1b[2mUsage: /layout linear|compact\x1b[0m".to_string());
+        return;
+    }
+    match LayoutMode::from_name(args) {
+        Some(mode) => {
+            let label = match mode {
+                LayoutMode::Linear => "linear — metadata header + message below",
+                LayoutMode::Compact => "compact — all fields on one line",
+            };
+            ctx.formatter.config.layout_mode = mode;
+            ctx.output.push(format!("\x1b[32mLayout: {label}\x1b[0m"));
+        }
+        None => ctx.output.push("\x1b[31mUsage: /layout linear|compact\x1b[0m".to_string()),
+    }
+}
+
+fn set_column_width(ctx: &mut CommandContext, col: &str, val: &str) {
+    match val.parse::<u16>() {
+        Ok(n) if n >= 1 && n <= 200 => {
+            match col.to_lowercase().as_str() {
+                "timestamp" | "ts" => {
+                    ctx.formatter.config.widths.timestamp = n;
+                    ctx.output.push(format!("\x1b[32mtimestamp width → {n}\x1b[0m"));
+                }
+                "level" | "lvl" => {
+                    ctx.formatter.config.widths.level = n;
+                    ctx.output.push(format!("\x1b[32mlevel width → {n}\x1b[0m"));
+                }
+                "pid" => {
+                    ctx.formatter.config.widths.pid = n;
+                    ctx.output.push(format!("\x1b[32mpid width → {n}\x1b[0m"));
+                }
+                "tid" => {
+                    ctx.formatter.config.widths.tid = n;
+                    ctx.output.push(format!("\x1b[32mtid width → {n}\x1b[0m"));
+                }
+                "tag" => {
+                    ctx.formatter.config.widths.tag = n;
+                    ctx.output.push(format!("\x1b[32mtag width → {n}\x1b[0m"));
+                }
+                _ => ctx.output.push(format!("\x1b[31mUnknown column: {col} (timestamp, level, pid, tid, tag)\x1b[0m")),
+            }
+        }
+        Ok(_) => ctx.output.push(format!("\x1b[31mWidth must be 1–200: {val}\x1b[0m")),
+        Err(_) => ctx.output.push(format!("\x1b[31mInvalid number: {val}\x1b[0m")),
+    }
+}
+
+fn cmd_width(ctx: &mut CommandContext, args: &str) {
+    if args.is_empty() || args == "show" {
+        let w = &ctx.formatter.config.widths;
+        ctx.output.push(format!(
+            "\x1b[36mColumn widths:\x1b[0m  timestamp={}  level={}  pid={}  tid={}  tag={}",
+            w.timestamp, w.level, w.pid, w.tid, w.tag
+        ));
+        ctx.output.push("\x1b[2mUsage: /width <col>=<n>  or  /width <col> <n>  (cols: timestamp, level, pid, tid, tag)\x1b[0m".to_string());
+        return;
+    }
+    if args == "reset" {
+        ctx.formatter.config.widths = Default::default();
+        ctx.output.push("\x1b[32mColumn widths reset to defaults\x1b[0m".to_string());
+        return;
+    }
+    // "tag 10" — two bare tokens
+    let parts: Vec<&str> = args.split_whitespace().collect();
+    if parts.len() == 2 && !parts[0].contains('=') && !parts[1].contains('=') {
+        set_column_width(ctx, parts[0], parts[1]);
+        return;
+    }
+    // "tag=10 pid=5 …"
+    let mut matched = false;
+    for token in &parts {
+        if let Some((k, v)) = token.split_once('=') {
+            set_column_width(ctx, k, v);
+            matched = true;
+        }
+    }
+    if !matched {
+        ctx.output.push("\x1b[31mUsage: /width tag=10  or  /width tag 10\x1b[0m".to_string());
     }
 }
 

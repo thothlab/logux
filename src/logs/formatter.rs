@@ -7,6 +7,34 @@
 
 use serde::{Deserialize, Serialize};
 
+/// How log entries are laid out on screen.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum LayoutMode {
+    /// Two-line layout: metadata header + indented message below (default).
+    #[default]
+    Linear,
+    /// Single-line layout: all fields in fixed-width columns, message truncated.
+    Compact,
+}
+
+impl LayoutMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Linear => "linear",
+            Self::Compact => "compact",
+        }
+    }
+
+    pub fn from_name(name: &str) -> Option<Self> {
+        match name.to_lowercase().as_str() {
+            "linear" => Some(Self::Linear),
+            "compact" => Some(Self::Compact),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Preset {
@@ -72,6 +100,8 @@ pub struct FormatConfig {
     pub preset: Preset,
     #[serde(default)]
     pub widths: ColumnWidths,
+    #[serde(default)]
+    pub layout_mode: LayoutMode,
 }
 
 impl Default for FormatConfig {
@@ -85,6 +115,7 @@ impl Default for FormatConfig {
             message: true,
             preset: Preset::Compact,
             widths: ColumnWidths::default(),
+            layout_mode: LayoutMode::default(),
         }
     }
 }
