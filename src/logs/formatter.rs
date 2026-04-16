@@ -11,10 +11,10 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum LayoutMode {
-    /// Two-line layout: metadata header + indented message below (default).
-    #[default]
+    /// Two-line layout: metadata header + indented message below.
     Linear,
-    /// Single-line layout: all fields in fixed-width columns, message truncated.
+    /// Single-line layout: all fields in fixed-width columns, message truncated (default).
+    #[default]
     Compact,
 }
 
