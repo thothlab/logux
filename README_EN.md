@@ -9,7 +9,7 @@
 ## Features
 
 - **Split-screen TUI** -- logs scroll on top, input line always visible at the bottom
-- **Two-line log layout** -- header row with timestamp / level / pid / tid / tag columns, then the message on the next line(s) indented and using the full terminal width (long messages wrap automatically); empty separator line between entries
+- **Two display layouts** -- `/layout linear` (default): header row with timestamp/level/tag + message on the next line(s) with wrapping; `/layout compact`: all fields on a single line in fixed-width columns, message truncated to remaining width
 - **ADB Logs** -- reads `adb logcat` with colored, formatted output
 - **Smart Filtering** -- by package, tag, level, PID, regex, text -- all changeable on the fly without restart
 - **Exclusion Filters** -- `/exclude tag` and `/exclude msg` to hide unwanted lines (LogRabbit-style "None of")
@@ -241,6 +241,7 @@ Edit and press Enter. Format: space-separated `key=value` pairs.
 |---------|-------------|
 | `/format <preset>` | compact / threadtime / verbose / minimal / json |
 | `/fields +field -field` | Toggle fields: timestamp, level, tag, pid, tid |
+| `/layout linear\|compact` | Switch layout: **linear** — header + message below; **compact** — all fields on one line in columns |
 | `/width <col>=<n> …` | Resize columns: timestamp, level, tag, pid, tid |
 | `/width show` / `/width reset` | Show / reset column widths |
 | `/copy [N]` | Copy last N message texts (default 50) to clipboard, no column padding |
