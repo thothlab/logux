@@ -1,6 +1,6 @@
 [package]
 name = "logux"
-version = "2.1.0"
+version = "2.2.0"
 edition = "2021"
 description = "Android Logs & Traffic CLI — real-time logcat viewer with filtering, presets, traffic inspection, and mock rules"
 license = "MIT"
